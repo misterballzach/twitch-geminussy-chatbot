@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { BotSettings } from '../types';
 import { ConnectionStatus } from '../types';
@@ -11,9 +10,6 @@ interface ConfigPanelProps {
   onDisconnect: () => void;
   onLogout: () => void;
   onChannelChange: (channel: string) => void;
-  responseFrequency: number;
-  onFrequencyChange: (frequency: number) => void;
-  onGeminiApiKeyChange: (apiKey: string) => void;
 }
 
 const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => {
@@ -29,14 +25,10 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
   }
 };
 
-export const ConfigPanel: React.FC<ConfigPanelProps> = ({ settings, status, onConnect, onDisconnect, onLogout, onChannelChange, responseFrequency, onFrequencyChange, onGeminiApiKeyChange }) => {
+export const ConfigPanel: React.FC<ConfigPanelProps> = ({ settings, status, onConnect, onDisconnect, onLogout, onChannelChange }) => {
   const isConnected = status === ConnectionStatus.CONNECTED;
   const isConnecting = status === ConnectionStatus.CONNECTING;
   const isDisabled = isConnected || isConnecting;
-
-  const handleFrequencySliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onFrequencyChange(parseFloat(e.target.value));
-  };
 
   return (
     <div className="bg-zinc-800/50 p-4 rounded-lg border border-zinc-700 backdrop-blur-sm">
@@ -64,54 +56,20 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ settings, status, onCo
             placeholder="e.g., your_channel_name"
           />
         </div>
-
-        <div>
-          <label htmlFor="gemini-api-key-input" className="block text-sm font-medium text-zinc-300 mb-1">
-            Gemini API Key
-          </label>
-          <input
-            id="gemini-api-key-input"
-            type="password"
-            value={settings.geminiApiKey || ''}
-            onChange={(e) => onGeminiApiKeyChange(e.target.value)}
-            disabled={isDisabled}
-            className="w-full bg-zinc-700 border-zinc-600 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            placeholder="Enter your Gemini API Key"
-          />
-           <p className="text-xs text-zinc-400 mt-1">Your key is stored locally in your browser.</p>
-        </div>
-
-        <div>
-          <label htmlFor="frequency-slider" className="block text-sm font-medium text-zinc-300 mb-1">
-            Random Response Frequency: <span className="font-bold text-violet-300">{Math.round(responseFrequency * 100)}%</span>
-          </label>
-          <input
-            id="frequency-slider"
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={responseFrequency}
-            onChange={handleFrequencySliderChange}
-            disabled={isDisabled}
-            className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-violet-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-           <p className="text-xs text-zinc-400 mt-1">Chance to respond to a random message. Set to 0% to only respond to mentions &amp; commands.</p>
-        </div>
       </div>
 
       <div className="mt-6 space-y-3">
         {isConnected ? (
           <button onClick={onDisconnect} className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded-md flex items-center justify-center gap-2 transition-colors">
-            <XCircleIcon /> Disconnect Bot
+            <XCircleIcon /> Disconnect
           </button>
         ) : (
           <button onClick={onConnect} disabled={isConnecting} className="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 px-4 rounded-md flex items-center justify-center gap-2 transition-colors disabled:bg-violet-800 disabled:cursor-not-allowed">
-            {isConnecting ? <><LoaderIcon className="animate-spin" /> Connecting...</> : <><PowerIcon /> Connect Bot</>}
+            {isConnecting ? <><LoaderIcon className="animate-spin" /> Connecting...</> : <><PowerIcon /> Connect</>}
           </button>
         )}
         <button onClick={onLogout} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md flex items-center justify-center gap-2 transition-colors">
-          <PowerIcon /> Logout & Change Account
+          <PowerIcon /> Logout
         </button>
       </div>
     </div>

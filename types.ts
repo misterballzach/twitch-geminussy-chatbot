@@ -1,4 +1,3 @@
-
 export interface ChatMessage {
   user: string;
   message: string;
@@ -19,5 +18,4 @@ export interface BotSettings {
   username: string;
   oauth: string;
   clientId: string;
-  geminiApiKey?: string;
 }

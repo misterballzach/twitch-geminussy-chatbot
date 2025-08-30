@@ -54,30 +54,59 @@ export const useTwitchChat = () => {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const websocket = useRef<WebSocket | null>(null);
   const settingsRef = useRef<BotSettings | null>(null);
-  const connectionStatusRef = useRef(connectionStatus);
-  connectionStatusRef.current = connectionStatus;
+  
+  // Use a ref to track status and prevent race conditions in async handlers
+  const statusRef = useRef(connectionStatus);
+  statusRef.current = connectionStatus;
 
   const addMessage = useCallback((newMessage: ChatMessage) => {
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setMessages(prev => [...prev.slice(-100), { ...newMessage, timestamp }]); // Keep last 100 messages
   }, []);
 
-  const disconnect = useCallback(() => {
+  // Centralized cleanup function
+  const cleanupConnection = useCallback(() => {
     if (websocket.current) {
-      websocket.current.close();
+      // Remove handlers to prevent them from firing during cleanup
+      websocket.current.onopen = null;
+      websocket.current.onmessage = null;
+      websocket.current.onerror = null;
+      websocket.current.onclose = null;
+      if (websocket.current.readyState !== WebSocket.CLOSED && websocket.current.readyState !== WebSocket.CLOSING) {
+        websocket.current.close();
+      }
       websocket.current = null;
-      setConnectionStatus(ConnectionStatus.DISCONNECTED);
     }
   }, []);
 
+  const disconnect = useCallback((status = ConnectionStatus.DISCONNECTED, message?: string) => {
+    cleanupConnection();
+    
+    // Only update state and add message if we weren't already disconnected
+    if (statusRef.current !== ConnectionStatus.DISCONNECTED) {
+      setConnectionStatus(status);
+      if (message) {
+        addMessage({ user: 'System', message, isBot: true });
+      } else if (status === ConnectionStatus.ERROR) {
+        addMessage({ user: 'System', message: 'Connection error. Check credentials.', isBot: true });
+      } else {
+        addMessage({ user: 'System', message: 'You have been disconnected.', isBot: true });
+      }
+    }
+  }, [addMessage, cleanupConnection]);
+
+
   const connect = useCallback((settings: BotSettings) => {
-    if (websocket.current && websocket.current.readyState === WebSocket.OPEN) {
+    if (statusRef.current === ConnectionStatus.CONNECTING || statusRef.current === ConnectionStatus.CONNECTED) {
       return;
     }
     
+    // Always clean up any previous connection artifacts before starting a new one.
+    cleanupConnection();
+
     settingsRef.current = settings;
     setConnectionStatus(ConnectionStatus.CONNECTING);
-    setMessages([]);
+    setMessages([]); // Clear messages on new connection
     addMessage({ user: 'System', message: `Connecting to #${settings.channel}...`, isBot: true });
 
     websocket.current = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
@@ -86,10 +115,10 @@ export const useTwitchChat = () => {
       if (!websocket.current || !settingsRef.current) return;
       const { oauth, username, channel } = settingsRef.current;
       
-      addMessage({ user: 'System', message: 'WebSocket opened. Authenticating...', isBot: true });
+      addMessage({ user: 'System', message: 'Authenticating...', isBot: true });
       
-      // Ensure oauth token has the correct prefix for the PASS command.
-      const passToken = oauth.startsWith('oauth:') ? oauth : `oauth:${oauth}`;
+      // The PASS command requires the "oauth:" prefix.
+      const passToken = `oauth:${oauth}`;
       
       websocket.current.send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
       websocket.current.send(`PASS ${passToken}`);
@@ -98,72 +127,84 @@ export const useTwitchChat = () => {
     };
 
     websocket.current.onmessage = (event) => {
-      // A single event can contain multiple IRC messages
-      const rawMessages = event.data.toString().split('\r\n').filter(Boolean);
-      
-      rawMessages.forEach(rawMessage => {
-        const parsed = parseMessage(rawMessage);
-
-        if (parsed) {
-          switch (parsed.command) {
-            case 'PING':
-              websocket.current?.send('PONG :tmi.twitch.tv');
-              break;
-            case '001': // This is the success signal
-              setConnectionStatus(ConnectionStatus.CONNECTED);
-              addMessage({ user: 'System', message: `Successfully connected to #${settingsRef.current?.channel}!`, isBot: true });
-              // This is the most common reason for a bot not being able to send messages.
-              addMessage({ user: 'System', message: `IMPORTANT: To send messages, the bot's Twitch account must have a VERIFIED EMAIL address in its settings.`, isBot: true });
-              addMessage({ user: 'System', message: `Tip: For best results, also make the bot a moderator in your channel (/mod ${settingsRef.current?.username})`, isBot: true });
-              break;
-            case 'PRIVMSG':
-              addMessage({
-                user: parsed.user,
-                message: parsed.message,
-                color: parsed.color === '#FFFFFF' ? getUserColor(parsed.user) : parsed.color,
-              });
-              break;
-            case 'NOTICE':
-              addMessage({ user: 'System', message: `Twitch Notice: ${parsed.message}`, isBot: true });
-              if (parsed.message.toLowerCase().includes('login authentication failed')) {
-                setConnectionStatus(ConnectionStatus.ERROR);
-                disconnect(); // Also close the connection
-              }
-              break;
+      try {
+        const rawMessages = event.data.toString().split('\r\n').filter(Boolean);
+        
+        rawMessages.forEach(rawMessage => {
+          const parsed = parseMessage(rawMessage);
+          if (parsed) {
+            switch (parsed.command) {
+              case 'PING':
+                websocket.current?.send('PONG :tmi.twitch.tv');
+                break;
+              case '001':
+                setConnectionStatus(ConnectionStatus.CONNECTED);
+                addMessage({ user: 'System', message: `Successfully connected to #${settingsRef.current?.channel}!`, isBot: true });
+                addMessage({ user: 'System', message: `IMPORTANT: Your account must have a VERIFIED EMAIL to send messages.`, isBot: true });
+                addMessage({ user: 'System', message: `Tip: For best results, also make your account a moderator (/mod ${settingsRef.current?.username})`, isBot: true });
+                break;
+              case 'PRIVMSG':
+                addMessage({
+                  user: parsed.user,
+                  message: parsed.message,
+                  color: parsed.color === '#FFFFFF' ? getUserColor(parsed.user) : parsed.color,
+                });
+                break;
+              case 'NOTICE':
+                addMessage({ user: 'System', message: `Twitch Notice: ${parsed.message}`, isBot: true });
+                if (parsed.message.toLowerCase().includes('login authentication failed')) {
+                  disconnect(ConnectionStatus.ERROR, `Authentication failed. Check your OAuth token.`);
+                }
+                break;
+            }
           }
-        }
-      });
+        });
+      } catch (error) {
+        console.error("Error processing Twitch message:", error);
+        // Optionally, add a system message to inform the user
+        addMessage({ user: 'System', message: 'An error occurred while processing chat messages.', isBot: true });
+      }
     };
 
     websocket.current.onerror = () => {
-      if (connectionStatusRef.current !== ConnectionStatus.DISCONNECTED) {
-        setConnectionStatus(ConnectionStatus.ERROR);
-        addMessage({ user: 'System', message: 'Connection error. Check console and credentials.', isBot: true });
-      }
+      disconnect(ConnectionStatus.ERROR, 'A connection error occurred. Check your network or credentials.');
     };
+
+
 
     websocket.current.onclose = () => {
-      if (connectionStatusRef.current !== ConnectionStatus.DISCONNECTED && connectionStatusRef.current !== ConnectionStatus.ERROR) {
-        setConnectionStatus(ConnectionStatus.DISCONNECTED);
-        addMessage({ user: 'System', message: 'Disconnected from Twitch chat.', isBot: true });
-      }
+      // If the connection closes for any reason, this will handle it.
+      disconnect(ConnectionStatus.DISCONNECTED, 'Connection has been closed by the server.');
     };
-  }, [addMessage, disconnect]);
+  }, [addMessage, disconnect, cleanupConnection]);
 
   const sendMessage = useCallback((message: string) => {
-    if (websocket.current && websocket.current.readyState === WebSocket.OPEN && settingsRef.current) {
-      addMessage({ user: 'System', message: `Attempting to send: "${message}"`, isBot: true });
+    // Defensive check: If the UI thinks we're connected but the socket is not open, it means we got disconnected uncleanly.
+    // The onclose handler should catch this, but as a backup, we prevent sending and inform the user.
+    if (statusRef.current === ConnectionStatus.CONNECTED && websocket.current?.readyState !== WebSocket.OPEN) {
+       addMessage({ 
+        user: 'System', 
+        message: `Could not send message. Connection was lost. Please reconnect.`, 
+        isBot: true 
+      });
+      return;
+    }
+
+    if (websocket.current?.readyState === WebSocket.OPEN && settingsRef.current) {
       const formattedMessage = `PRIVMSG #${settingsRef.current.channel} :${message}`;
       websocket.current.send(formattedMessage);
+      // Add the bot's own message to the chat display immediately for better UX
       addMessage({
         user: settingsRef.current.username,
         message: message,
         isBot: true
       });
     } else {
-      // Simplified Error Handling: Inform the user without forcing a disconnect.
-      // This prevents the confusing "state mismatch" error and lets the user decide to reconnect.
-      addMessage({ user: 'System', message: `Could not send message. Connection is closed.`, isBot: true });
+      addMessage({ 
+        user: 'System', 
+        message: `Could not send message. Connection is not open.`, 
+        isBot: true 
+      });
     }
   }, [addMessage]);
 
