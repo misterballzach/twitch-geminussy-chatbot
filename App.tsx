@@ -57,20 +57,12 @@ const App: React.FC = () => {
     checkExistingAuth();
   }, []);
   
-  const handleUrlSubmit = async (url: string) => {
-    try {
-      const hash = new URL(url).hash.substring(1);
-      const params = new URLSearchParams(hash);
-      const accessToken = params.get('access_token');
-
-      if (accessToken) {
-        await authenticateWithToken(accessToken);
-      } else {
-        throw new Error("access_token not found in URL hash");
-      }
-    } catch (error) {
-      console.error("Failed to parse token from URL:", error);
-      alert("Could not find a valid token in the provided URL. Please make sure you copied the entire URL after being redirected by Twitch.");
+  const handleTokenSubmit = async (token: string) => {
+    if (token) {
+      await authenticateWithToken(token);
+    } else {
+      // This case should ideally not be hit due to the validation in LoginPage
+      alert("No token provided. Please try again.");
       setIsAuthenticated(false);
     }
   };
@@ -159,7 +151,7 @@ const App: React.FC = () => {
   };
   
   if (!isAuthenticated) {
-    return <LoginPage onUrlSubmit={handleUrlSubmit} />;
+    return <LoginPage onTokenSubmit={handleTokenSubmit} />;
   }
 
   return (

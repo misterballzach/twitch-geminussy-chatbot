@@ -3,25 +3,28 @@ import { BotIcon, PowerIcon, ClipboardIcon } from './icons/Icons';
 import { getTwitchAuthUrl } from '../services/twitchAuth';
 
 interface LoginPageProps {
-  onUrlSubmit: (url: string) => void;
+  onTokenSubmit: (token: string) => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onUrlSubmit }) => {
-  const [url, setUrl] = useState('');
+export const LoginPage: React.FC<LoginPageProps> = ({ onTokenSubmit }) => {
+  const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const authUrl = getTwitchAuthUrl();
 
   const handleSubmit = () => {
     setError('');
-    if (!url.trim()) {
-      setError('Please paste the URL from your browser.');
+    const trimmedToken = token.trim();
+    if (!trimmedToken) {
+      setError('Please paste your access token.');
       return;
     }
-    if (!url.includes('#access_token=')) {
-      setError('The URL does not seem to contain an access token. Please make sure you copy the full URL after being redirected.');
+    // Basic validation: Twitch OAuth tokens are typically 30 characters long and alphanumeric.
+    // This is not a foolproof check but can catch obvious mistakes.
+    if (trimmedToken.length !== 30 || !/^[a-zA-Z0-9]+$/.test(trimmedToken)) {
+      setError('This does not look like a valid Twitch access token. Please copy it carefully.');
       return;
     }
-    onUrlSubmit(url);
+    onTokenSubmit(trimmedToken);
   };
 
   return (
@@ -36,8 +39,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onUrlSubmit }) => {
         <div className="mt-8 text-left bg-zinc-800/50 p-6 rounded-lg border border-zinc-700 space-y-6">
           
           <div>
-            <h2 className="text-xl font-semibold flex items-center gap-2"><span className="bg-violet-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span> Authorize with Twitch</h2>
-            <p className="text-zinc-400 text-sm mt-2 ml-8">Click the button below to open the official Twitch authorization page in a new tab.</p>
+            <h2 className="text-xl font-semibold flex items-center gap-2"><span className="bg-violet-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span> Generate Access Token</h2>
+            <p className="text-zinc-400 text-sm mt-2 ml-8">Click the button below to open the Twitch Token Generator in a new tab. You may need to authorize with Twitch.</p>
             <a
               href={authUrl}
               target="_blank"
@@ -45,28 +48,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onUrlSubmit }) => {
               className="mt-3 ml-8 inline-flex items-center justify-center gap-3 bg-[#9146FF] hover:bg-[#7a3ad9] text-white font-bold py-2 px-5 rounded-md transition-colors"
             >
               <PowerIcon />
-              Authorize with Twitch
+              Open Token Generator
             </a>
           </div>
 
           <div>
-             <h2 className="text-xl font-semibold flex items-center gap-2"><span className="bg-violet-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span> Copy the URL</h2>
+             <h2 className="text-xl font-semibold flex items-center gap-2"><span className="bg-violet-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span> Copy the Access Token</h2>
              <p className="text-zinc-400 text-sm mt-2 ml-8">
-                After authorizing, you will be redirected to a page that says "Discontinued". <strong>This is normal and expected!</strong> The token you need is in the URL in your browser's address bar. Copy that entire URL.
+                On the token generator page, ensure the correct scopes are selected (<code className="bg-zinc-700 px-1 rounded">chat:read</code> and <code className="bg-zinc-700 px-1 rounded">chat:edit</code> should be included). Click "Generate Token!", then copy the <strong>Access Token</strong> from the resulting page.
              </p>
           </div>
           
           <div>
-            <h2 className="text-xl font-semibold flex items-center gap-2"><span className="bg-violet-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</span> Paste URL and Login</h2>
-            <p className="text-zinc-400 text-sm mt-2 ml-8">Paste the full URL into the box below and click "Login".</p>
+            <h2 className="text-xl font-semibold flex items-center gap-2"><span className="bg-violet-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</span> Paste Token and Login</h2>
+            <p className="text-zinc-400 text-sm mt-2 ml-8">Paste the Access Token (not the full URL) into the box below and click "Login".</p>
             <div className="mt-3 ml-8 flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste the full URL here..."
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="Paste your 30-character access token here..."
                 className="w-full flex-grow bg-zinc-700 border-zinc-600 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-                aria-label="Paste Twitch Redirect URL"
+                aria-label="Paste Twitch Access Token"
               />
               <button
                 onClick={handleSubmit}
