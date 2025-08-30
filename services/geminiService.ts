@@ -17,38 +17,46 @@ export const generateBotResponse = async (
   botUsername: string
 ): Promise<string> => {
   try {
-    // Take the last 10 messages for context and filter out system messages.
-    const recentHistory = chatHistory.slice(-10).filter(msg => msg.user !== 'System');
+    // Take the last 15 messages for context and filter out system messages.
+    let recentHistory = chatHistory.slice(-15).filter(msg => msg.user !== 'System');
 
-    if (recentHistory.length === 0) {
-      return '';
+    // The conversation for the model must start with a 'user' role.
+    // Find the first non-bot message to start the conversation from.
+    const firstUserMessageIndex = recentHistory.findIndex(msg => 
+        !msg.isBot && msg.user.toLowerCase() !== botUsername.toLowerCase()
+    );
+
+    // If there are no user messages in the recent history, we can't respond.
+    if (firstUserMessageIndex === -1) {
+        return '';
     }
-    
-    // Gemini requires an alternating user/model conversation history.
-    // We'll merge consecutive user messages into single 'user' turns to ensure this.
-    const conversationHistory: GeminiContent[] = [];
-    for (const msg of recentHistory) {
-      const isBotMessage = msg.isBot || msg.user.toLowerCase() === botUsername.toLowerCase();
-      const currentRole = isBotMessage ? 'model' : 'user';
-      const lastTurn = conversationHistory[conversationHistory.length - 1];
-      
-      // Prefix user messages with their name for the AI's context.
-      const messageText = isBotMessage ? msg.message : `${msg.user}: ${msg.message}`;
 
-      if (lastTurn && lastTurn.role === currentRole) {
-        // Merge with the last turn if the role is the same (e.g. two users chatting in a row)
-        lastTurn.parts[0].text += `\n${messageText}`;
-      } else {
-        // Otherwise, start a new turn in the conversation
-        conversationHistory.push({
-          role: currentRole,
-          parts: [{ text: messageText }]
-        });
-      }
+    // Slice the history to ensure it starts with a user message.
+    recentHistory = recentHistory.slice(firstUserMessageIndex);
+    
+    // A more robust method to build a strictly alternating conversation history.
+    // This prevents malformed requests that could cause the API to silently fail.
+    const conversationHistory: GeminiContent[] = [];
+    let expectedRole: 'user' | 'model' = 'user';
+
+    // Iterate backwards through the recent history to build a valid, alternating sequence.
+    for (const msg of [...recentHistory].reverse()) {
+        const isBotMessage = msg.isBot || msg.user.toLowerCase() === botUsername.toLowerCase();
+        const currentRole = isBotMessage ? 'model' : 'user';
+
+        if (currentRole === expectedRole) {
+            const messageText = isBotMessage ? msg.message : `${msg.user}: ${msg.message}`;
+            conversationHistory.unshift({
+                role: currentRole,
+                parts: [{ text: messageText }]
+            });
+            // Flip the expected role for the next turn in the sequence.
+            expectedRole = (currentRole === 'user') ? 'model' : 'user';
+        }
     }
     
     // If, after processing, there's no history or the last message isn't from a user, do nothing.
-    // This is a safeguard, as the main App logic should already prevent this scenario.
+    // This is a safeguard; the logic above should prevent this from happening.
     const lastTurn = conversationHistory[conversationHistory.length - 1];
     if (!lastTurn || lastTurn.role !== 'user') {
       return '';

@@ -18,4 +18,5 @@ export interface BotSettings {
   channel: string;
   username: string;
   oauth: string;
+  clientId: string;
 }
