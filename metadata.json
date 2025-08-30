@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Twitch Chat AI Bot",
+  "description": "An AI-powered bot that connects to your Twitch chat, reads messages, and generates intelligent, context-aware responses using the Gemini API. Customize the bot's personality and let it engage with your community.",
+  "requestFramePermissions": []
+}
