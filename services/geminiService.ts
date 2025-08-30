@@ -1,9 +1,6 @@
-
 import { GoogleGenAI } from "@google/genai";
 import type { ChatMessage } from '../types';
-
-// FIX: Initialize the GoogleGenAI client. The 'ai' variable was used before it was defined.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+import type { Chat } from '@google/genai';
 
 // This interface matches the structure required by the Gemini API for conversation history
 interface GeminiContent {
@@ -11,75 +8,145 @@ interface GeminiContent {
   parts: { text: string }[];
 }
 
+const handleApiError = (error: unknown, context: string) => {
+  console.error(`Gemini API Error (${context}):`, error);
+  if (error instanceof Error) {
+    console.error(`Gemini API Error details (${context}):`, error.message);
+    if (error.message.includes('API key not valid')) {
+      return 'Sorry, your Gemini API key is invalid. Please check it in the settings.';
+    }
+  }
+  return 'Sorry, I had a problem thinking of a response.';
+};
+
 export const generateBotResponse = async (
+  apiKey: string,
   systemPrompt: string,
   chatHistory: ChatMessage[],
   botUsername: string
 ): Promise<string> => {
+  if (!apiKey) {
+    return "API key not configured. Please set it in the configuration panel.";
+  }
+  const ai = new GoogleGenAI({ apiKey });
+
   try {
-    // Take the last 15 messages for context and filter out system messages.
     let recentHistory = chatHistory.slice(-15).filter(msg => msg.user !== 'System');
 
-    // The conversation for the model must start with a 'user' role.
-    // Find the first non-bot message to start the conversation from.
     const firstUserMessageIndex = recentHistory.findIndex(msg => 
         !msg.isBot && msg.user.toLowerCase() !== botUsername.toLowerCase()
     );
 
-    // If there are no user messages in the recent history, we can't respond.
     if (firstUserMessageIndex === -1) {
         return '';
     }
-
-    // Slice the history to ensure it starts with a user message.
     recentHistory = recentHistory.slice(firstUserMessageIndex);
     
-    // A more robust method to build a strictly alternating conversation history.
-    // This prevents malformed requests that could cause the API to silently fail.
-    const conversationHistory: GeminiContent[] = [];
+    const conversationForApi: GeminiContent[] = [];
     let expectedRole: 'user' | 'model' = 'user';
 
-    // Iterate backwards through the recent history to build a valid, alternating sequence.
     for (const msg of [...recentHistory].reverse()) {
         const isBotMessage = msg.isBot || msg.user.toLowerCase() === botUsername.toLowerCase();
         const currentRole = isBotMessage ? 'model' : 'user';
 
         if (currentRole === expectedRole) {
+            // Provide context to the AI by including the username for user messages
             const messageText = isBotMessage ? msg.message : `${msg.user}: ${msg.message}`;
-            conversationHistory.unshift({
+            conversationForApi.unshift({
                 role: currentRole,
                 parts: [{ text: messageText }]
             });
-            // Flip the expected role for the next turn in the sequence.
             expectedRole = (currentRole === 'user') ? 'model' : 'user';
         }
     }
     
-    // If, after processing, there's no history or the last message isn't from a user, do nothing.
-    // This is a safeguard; the logic above should prevent this from happening.
-    const lastTurn = conversationHistory[conversationHistory.length - 1];
-    if (!lastTurn || lastTurn.role !== 'user') {
+    const lastMessage = conversationForApi.pop();
+    if (!lastMessage || lastMessage.role !== 'user' || !lastMessage.parts[0]?.text) {
       return '';
     }
       
-    const response = await ai.models.generateContent({
+    const historyForChat = conversationForApi;
+
+    const chat: Chat = ai.chats.create({
       model: 'gemini-2.5-flash',
-      contents: conversationHistory,
+      history: historyForChat,
       config: {
         systemInstruction: `${systemPrompt}\nYou are a Twitch chat bot named "${botUsername}". Do not prefix your response with your name. Keep responses concise and suitable for a fast-paced chat.`,
-        thinkingConfig: { thinkingBudget: 0 }, // For low latency
         temperature: 0.8,
         topP: 0.9,
       }
     });
 
+    // FIX: The sendMessage method expects an object with a 'message' property.
+    const response = await chat.sendMessage({ message: lastMessage.parts[0].text });
     return response.text.trim();
   } catch (error) {
-    console.error('Gemini API Error:', error);
-     if (error instanceof Error) {
-        console.error('Gemini API Error details:', error.message);
-    }
-    // Return a user-friendly error message to be sent to chat
-    return 'Sorry, I had a problem thinking of a response.';
+    return handleApiError(error, 'Chat Response');
+  }
+};
+
+export const getDirectAIResponse = async (
+  apiKey: string,
+  systemPrompt: string,
+  botUsername: string,
+  userMessage: string
+): Promise<string> => {
+  if (!apiKey) {
+    throw new Error("API key not configured.");
+  }
+  const ai = new GoogleGenAI({ apiKey });
+
+  try {
+    const chat: Chat = ai.chats.create({
+      model: 'gemini-2.5-flash',
+      config: {
+        systemInstruction: `${systemPrompt}\nYou are currently in a private chat with the user. Your name is "${botUsername}".`,
+        temperature: 0.7,
+      }
+    });
+
+    // FIX: The sendMessage method expects an object with a 'message' property.
+    const response = await chat.sendMessage({ message: userMessage });
+    return response.text.trim();
+
+  } catch (error) {
+    console.error('Gemini API Error (Direct Chat):', error);
+    throw error;
+  }
+};
+
+export const rephraseAsBot = async (
+  apiKey: string,
+  systemPrompt: string,
+  botUsername: string,
+  textToRephrase: string
+): Promise<string> => {
+  if (!apiKey) {
+    throw new Error("API key not configured.");
+  }
+  const ai = new GoogleGenAI({ apiKey });
+
+  try {
+    const rephraseInstruction = `Rephrase the following message in your voice for Twitch chat. Here is the message: "${textToRephrase}"`;
+    
+    const chat: Chat = ai.chats.create({
+      model: 'gemini-2.5-flash',
+      config: {
+        systemInstruction: `${systemPrompt}\nYou are a Twitch chat bot named "${botUsername}". Your response should be a concise, rephrased version of the user's message, suitable for chat. Only provide the rephrased message, without any extra commentary or quotation marks.`,
+        temperature: 0.8,
+      }
+    });
+
+    // FIX: The sendMessage method expects an object with a 'message' property.
+    const response = await chat.sendMessage({ message: rephraseInstruction });
+    const responseText = response.text;
+
+    const singleLineResponse = responseText.replace(/(\r\n|\n|\r)/gm, " ").trim();
+    const finalResponse = singleLineResponse.replace(/^"|"$/g, '').trim();
+
+    return finalResponse;
+  } catch (error) {
+    console.error('Gemini API Error (Rephrasing):', error);
+    throw error;
   }
 };

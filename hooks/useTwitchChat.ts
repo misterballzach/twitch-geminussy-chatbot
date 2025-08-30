@@ -1,4 +1,3 @@
-
 import { useState, useRef, useCallback } from 'react';
 import type { ChatMessage, BotSettings } from '../types';
 import { ConnectionStatus } from '../types';
@@ -84,16 +83,18 @@ export const useTwitchChat = () => {
     websocket.current = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
 
     websocket.current.onopen = () => {
-      if (!websocket.current) return;
-
-      // Sanitize oauth token: remove 'oauth:' prefix if present
-      const oauthToken = settings.oauth.startsWith('oauth:')
-        ? settings.oauth.substring('oauth:'.length)
-        : settings.oauth;
-        
-      websocket.current.send(`PASS oauth:${oauthToken}`);
-      websocket.current.send(`NICK ${settings.username}`);
-      websocket.current.send(`JOIN #${settings.channel}`);
+      if (!websocket.current || !settingsRef.current) return;
+      const { oauth, username, channel } = settingsRef.current;
+      
+      addMessage({ user: 'System', message: 'WebSocket opened. Authenticating...', isBot: true });
+      
+      // Ensure oauth token has the correct prefix for the PASS command.
+      const passToken = oauth.startsWith('oauth:') ? oauth : `oauth:${oauth}`;
+      
+      websocket.current.send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');
+      websocket.current.send(`PASS ${passToken}`);
+      websocket.current.send(`NICK ${username}`);
+      websocket.current.send(`JOIN #${channel}`);
     };
 
     websocket.current.onmessage = (event) => {
@@ -110,8 +111,10 @@ export const useTwitchChat = () => {
               break;
             case '001': // This is the success signal
               setConnectionStatus(ConnectionStatus.CONNECTED);
-              addMessage({ user: 'System', message: `Connected to #${settingsRef.current?.channel}!`, isBot: true });
-              addMessage({ user: 'System', message: `Tip: For best results, make sure the bot is a moderator in your channel (/mod ${settingsRef.current?.username})`, isBot: true });
+              addMessage({ user: 'System', message: `Successfully connected to #${settingsRef.current?.channel}!`, isBot: true });
+              // This is the most common reason for a bot not being able to send messages.
+              addMessage({ user: 'System', message: `IMPORTANT: To send messages, the bot's Twitch account must have a VERIFIED EMAIL address in its settings.`, isBot: true });
+              addMessage({ user: 'System', message: `Tip: For best results, also make the bot a moderator in your channel (/mod ${settingsRef.current?.username})`, isBot: true });
               break;
             case 'PRIVMSG':
               addMessage({
@@ -140,7 +143,6 @@ export const useTwitchChat = () => {
     };
 
     websocket.current.onclose = () => {
-      // Only show disconnected message if we weren't already manually disconnecting or in an error state from auth failure
       if (connectionStatusRef.current !== ConnectionStatus.DISCONNECTED && connectionStatusRef.current !== ConnectionStatus.ERROR) {
         setConnectionStatus(ConnectionStatus.DISCONNECTED);
         addMessage({ user: 'System', message: 'Disconnected from Twitch chat.', isBot: true });
@@ -150,6 +152,7 @@ export const useTwitchChat = () => {
 
   const sendMessage = useCallback((message: string) => {
     if (websocket.current && websocket.current.readyState === WebSocket.OPEN && settingsRef.current) {
+      addMessage({ user: 'System', message: `Attempting to send: "${message}"`, isBot: true });
       const formattedMessage = `PRIVMSG #${settingsRef.current.channel} :${message}`;
       websocket.current.send(formattedMessage);
       addMessage({
@@ -157,6 +160,10 @@ export const useTwitchChat = () => {
         message: message,
         isBot: true
       });
+    } else {
+      // Simplified Error Handling: Inform the user without forcing a disconnect.
+      // This prevents the confusing "state mismatch" error and lets the user decide to reconnect.
+      addMessage({ user: 'System', message: `Could not send message. Connection is closed.`, isBot: true });
     }
   }, [addMessage]);
 

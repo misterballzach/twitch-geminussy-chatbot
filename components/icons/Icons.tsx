@@ -38,3 +38,15 @@ export const MessageSquareIcon: React.FC<IconProps> = (props) => (
 export const ClipboardIcon: React.FC<IconProps> = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
 );
+
+export const SendIcon: React.FC<IconProps> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>
+);
+
+export const WandIcon: React.FC<IconProps> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 4V2"></path><path d="M12 22v-2"></path><path d="M20 12h2"></path><path d="M2 12h2"></path><path d="m19 5-1.5 1.5"></path><path d="m6.5 17.5 1.5 1.5"></path><path d="m5 5 1.5 1.5"></path><path d="m17.5 17.5 1.5 1.5"></path><path d="m21 15-2-2-1.5 1.5-2-2-1.5 1.5-2-2-1.5 1.5-2-2-4 4 2 2 1.5-1.5 2 2 1.5-1.5 2 2 1.5-1.5 2 2Z"></path></svg>
+);
+
+export const MessageCircleIcon: React.FC<IconProps> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path></svg>
+);

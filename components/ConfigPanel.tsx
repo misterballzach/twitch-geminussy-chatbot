@@ -13,6 +13,7 @@ interface ConfigPanelProps {
   onChannelChange: (channel: string) => void;
   responseFrequency: number;
   onFrequencyChange: (frequency: number) => void;
+  onGeminiApiKeyChange: (apiKey: string) => void;
 }
 
 const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => {
@@ -28,7 +29,7 @@ const StatusIndicator: React.FC<{ status: ConnectionStatus }> = ({ status }) => 
   }
 };
 
-export const ConfigPanel: React.FC<ConfigPanelProps> = ({ settings, status, onConnect, onDisconnect, onLogout, onChannelChange, responseFrequency, onFrequencyChange }) => {
+export const ConfigPanel: React.FC<ConfigPanelProps> = ({ settings, status, onConnect, onDisconnect, onLogout, onChannelChange, responseFrequency, onFrequencyChange, onGeminiApiKeyChange }) => {
   const isConnected = status === ConnectionStatus.CONNECTED;
   const isConnecting = status === ConnectionStatus.CONNECTING;
   const isDisabled = isConnected || isConnecting;
@@ -62,6 +63,22 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ settings, status, onCo
             className="w-full bg-zinc-700 border-zinc-600 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500 disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder="e.g., your_channel_name"
           />
+        </div>
+
+        <div>
+          <label htmlFor="gemini-api-key-input" className="block text-sm font-medium text-zinc-300 mb-1">
+            Gemini API Key
+          </label>
+          <input
+            id="gemini-api-key-input"
+            type="password"
+            value={settings.geminiApiKey || ''}
+            onChange={(e) => onGeminiApiKeyChange(e.target.value)}
+            disabled={isDisabled}
+            className="w-full bg-zinc-700 border-zinc-600 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder="Enter your Gemini API Key"
+          />
+           <p className="text-xs text-zinc-400 mt-1">Your key is stored locally in your browser.</p>
         </div>
 
         <div>
