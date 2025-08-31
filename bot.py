@@ -81,49 +81,6 @@ def generate_ai_response(prompt: str, config) -> str:
     headers = {
         "Content-Type": "application/json",
     }
-def analyze_sentiment_and_update_preferences(message, config):
-    prompt = f"Analyze the sentiment of the following message and identify the main topics. Respond with a JSON object with two keys: 'sentiment' (either 'positive', 'negative', or 'neutral') and 'topics' (a list of strings). Message: {message}"
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
-    headers = {
-        "Content-Type": "application/json",
-    }
-    data = {"contents":[{"parts":[{"text": prompt}]}]}
-
-    try:
-        r = requests.post(url, headers=headers, json=data, timeout=10)
-        r.raise_for_status()
-        resp = r.json()
-
-        text_parts = []
-        candidates = resp.get("candidates", [])
-        if candidates:
-            content = candidates[0].get("content", {})
-            parts = content.get("parts", [])
-            for part in parts:
-                if "text" in part:
-                    text_parts.append(part["text"])
-
-        response_text = " ".join(text_parts).strip()
-        response_json = json.loads(response_text)
-
-        sentiment = response_json.get("sentiment")
-        topics = response_json.get("topics", [])
-
-        if sentiment == "positive":
-            config["personality_traits"]["likes"].extend(topics)
-        elif sentiment == "negative":
-            config["personality_traits"]["dislikes"].extend(topics)
-
-        # Remove duplicates
-        config["personality_traits"]["likes"] = list(set(config["personality_traits"]["likes"]))
-        config["personality_traits"]["dislikes"] = list(set(config["personality_traits"]["dislikes"]))
-
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
-
-    except Exception as e:
-        print(f"[ERROR] Sentiment analysis failed: {e}")
     personality_prompt = f"Respond in personality: {config['personality']}"
     if "personality_traits" in config:
         likes = ", ".join(config["personality_traits"].get("likes", []))
@@ -157,6 +114,32 @@ def analyze_sentiment_and_update_preferences(message, config):
     except Exception as e:
         print(f"[ERROR] Gemini API call failed: {e}, full response: {r.text if 'r' in locals() else 'no response'}")
         return "Hmm… I couldn't come up with a response!"
+
+def analyze_sentiment_and_update_preferences(message, config):
+    prompt = f"Analyze the sentiment of the following message and identify the main topics. Respond with a JSON object with two keys: 'sentiment' (either 'positive', 'negative', or 'neutral') and 'topics' (a list of strings). Message: {message}"
+
+    response_text = generate_ai_response(prompt, config)
+
+    try:
+        response_json = json.loads(response_text)
+
+        sentiment = response_json.get("sentiment")
+        topics = response_json.get("topics", [])
+
+        if sentiment == "positive":
+            config["personality_traits"]["likes"].extend(topics)
+        elif sentiment == "negative":
+            config["personality_traits"]["dislikes"].extend(topics)
+
+        # Remove duplicates
+        config["personality_traits"]["likes"] = list(set(config["personality_traits"]["likes"]))
+        config["personality_traits"]["dislikes"] = list(set(config["personality_traits"]["dislikes"]))
+
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=4)
+
+    except Exception as e:
+        print(f"[ERROR] Sentiment analysis failed: {e}")
 
 # ---------------- MEMORY ----------------
 def save_memory(user, msg, response):
@@ -348,6 +331,8 @@ class IRCBot:
         self.send_message(f"/timeout {user} {duration}")
 
     def send_message(self, msg):
+        if not msg:
+            return
         # Split by paragraphs first for natural pauses
         paragraphs = msg.split("\n")
         for paragraph in paragraphs:
