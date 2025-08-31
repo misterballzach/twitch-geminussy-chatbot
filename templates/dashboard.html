@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Bot Dashboard</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #5b21b6; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="range"] { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ddd; }
+        button { background-color: #5b21b6; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #4c1d95; }
+        #logs { margin-top: 20px; background: #eee; padding: 10px; border-radius: 4px; height: 200px; overflow-y: scroll; }
+        .log-message { font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gemini Twitch Bot Dashboard</h1>
+        <div class="form-group">
+            <label for="personality">Personality:</label>
+            <input type="text" id="personality" value="{{ personality }}">
+        </div>
+        <div class="form-group">
+            <label for="freq">Auto Chat Frequency: <span id="freq_val">{{ auto_chat_freq }}</span></label>
+            <input type="range" id="freq" min="0" max="1" step="0.01" value="{{ auto_chat_freq }}">
+        </div>
+        <div class="form-group">
+            <label for="say_msg">Send !say Message:</label>
+            <input type="text" id="say_msg">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+        <div id="logs">
+            <div class="log-message">Dashboard loaded.</div>
+        </div>
+        <div class="form-group">
+            <h2>Socials</h2>
+            <div id="socials-container">
+                <!-- Socials will be dynamically added here -->
+            </div>
+            <button onclick="addSocial()">Add Social</button>
+            <button onclick="saveSocials()">Save Socials</button>
+        </div>
+        <div class="form-group">
+            <h2>Commands</h2>
+            <ul id="commands-list">
+                <!-- Commands will be dynamically added here -->
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        const personalityInput = document.getElementById("personality");
+        const freqInput = document.getElementById("freq");
+        const freqVal = document.getElementById("freq_val");
+        const logsContainer = document.getElementById("logs");
+        const socialsContainer = document.getElementById("socials-container");
+        const commandsList = document.getElementById("commands-list");
+
+        freqInput.addEventListener("input", () => {
+            freqVal.innerText = freqInput.value;
+            updateConfig();
+        });
+
+        personalityInput.addEventListener("change", updateConfig);
+
+        function updateConfig() {
+            socket.emit("update_config", {
+                personality: personalityInput.value,
+                auto_chat_freq: parseFloat(freqInput.value)
+            });
+        }
+
+        function sendMessage() {
+            const msg = document.getElementById("say_msg").value;
+            if(msg) {
+                socket.emit("send_message", {message: msg});
+                document.getElementById("say_msg").value = "";
+            }
+        }
+
+        function addLog(message) {
+            const logElement = document.createElement("div");
+            logElement.className = "log-message";
+            logElement.textContent = message;
+            logsContainer.appendChild(logElement);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        socket.on("config_updated", (config) => {
+            personalityInput.value = config.personality;
+            freqInput.value = config.auto_chat_freq;
+            freqVal.innerText = config.auto_chat_freq;
+            addLog("Config updated.");
+        });
+
+        // Initial population
+        const initialSocials = JSON.parse('{{ socials | safe }}');
+        for (const [platform, link] of Object.entries(initialSocials)) {
+            const socialDiv = document.createElement("div");
+            socialDiv.innerHTML = `<input type="text" value="${platform}" class="social-platform" placeholder="Platform"> <input type="text" value="${link}" class="social-link" placeholder="Link">`;
+            socialsContainer.appendChild(socialDiv);
+        }
+
+        const initialCommands = JSON.parse('{{ commands | safe }}');
+        console.log("Initial commands:", initialCommands);
+        for (const command of initialCommands) {
+            const li = document.createElement("li");
+            li.textContent = `!${command}`;
+            commandsList.appendChild(li);
+        }
+
+        function addSocial() {
+            const socialDiv = document.createElement("div");
+            socialDiv.innerHTML = `<input type="text" class="social-platform" placeholder="Platform"> <input type="text" class="social-link" placeholder="Link">`;
+            socialsContainer.appendChild(socialDiv);
+        }
+
+        function saveSocials() {
+            const socials = {};
+            const socialDivs = socialsContainer.querySelectorAll("div");
+            socialDivs.forEach(div => {
+                const platform = div.querySelector(".social-platform").value;
+                const link = div.querySelector(".social-link").value;
+                if (platform && link) {
+                    socials[platform] = link;
+                }
+            });
+            socket.emit("update_socials", {socials: socials});
+        }
+
+        socket.on("connect", () => {
+            addLog("Connected to server.");
+        });
+
+        socket.on("disconnect", () => {
+            addLog("Disconnected from server.");
+        });
+    </script>
+</body>
+</html>
