@@ -2,6 +2,7 @@ from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 import json
 from bot import generate_ai_response
+from database import get_db_connection
 
 CONFIG_FILE = "bot_config.json"
 
@@ -86,6 +87,13 @@ def create_dashboard_app(bot):
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
         bot.config["personality_traits"] = config["personality_traits"]
+
+    @socketio.on("get_user_data")
+    def handle_get_user_data():
+        conn = get_db_connection()
+        users = conn.execute("SELECT * FROM users").fetchall()
+        conn.close()
+        emit("user_data", {user["username"]: dict(user) for user in users})
 
     app.debug = True
     return app, socketio

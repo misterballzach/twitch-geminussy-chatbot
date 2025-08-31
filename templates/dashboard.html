@@ -66,6 +66,13 @@
             </div>
         </div>
         <div class="form-group">
+            <h2>User Data</h2>
+            <div id="user-data-container">
+                <!-- User data will be dynamically added here -->
+            </div>
+            <button onclick="refreshUserData()">Refresh User Data</button>
+        </div>
+        <div class="form-group">
             <h2>Moderation</h2>
             <div id="moderation-container">
                 <div>
@@ -104,6 +111,7 @@
         const timeoutDurationInput = document.getElementById("timeout-duration");
         const likesInput = document.getElementById("likes");
         const dislikesInput = document.getElementById("dislikes");
+        const userDataContainer = document.getElementById("user-data-container");
 
         freqInput.addEventListener("input", () => {
             freqVal.innerText = freqInput.value;
@@ -213,6 +221,32 @@
             };
             socket.emit("update_personality_traits", {personality_traits: personalityTraits});
         }
+
+        function refreshUserData() {
+            socket.emit("get_user_data");
+        }
+
+        socket.on("user_data", (data) => {
+            userDataContainer.innerHTML = "";
+            const table = document.createElement("table");
+            table.innerHTML = `
+                <tr>
+                    <th>Username</th>
+                    <th>Message Count</th>
+                    <th>Is Subscriber</th>
+                </tr>
+            `;
+            for (const [username, user_data] of Object.entries(data)) {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${username}</td>
+                    <td>${user_data.message_count}</td>
+                    <td>${user_data.is_subscriber ? 'Yes' : 'No'}</td>
+                `;
+                table.appendChild(row);
+            }
+            userDataContainer.appendChild(table);
+        });
 
         socket.on("connect", () => {
             addLog("Connected to server.");
