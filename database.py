@@ -13,10 +13,20 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             message_count INTEGER NOT NULL DEFAULT 0,
-            is_subscriber BOOLEAN NOT NULL DEFAULT 0,
-            favouritism_score INTEGER NOT NULL DEFAULT 0
+            is_subscriber BOOLEAN NOT NULL DEFAULT 0
         )
     """)
+    conn.commit()
+    conn.close()
+    migrate_tables()
+
+def migrate_tables():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if "favouritism_score" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN favouritism_score INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     conn.close()
 
