@@ -51,6 +51,42 @@
                 <!-- Commands will be dynamically added here -->
             </ul>
         </div>
+        <div class="form-group">
+            <h2>Personality Traits</h2>
+            <div id="personality-traits-container">
+                <div>
+                    <label for="likes">Likes (comma-separated):</label>
+                    <input type="text" id="likes">
+                </div>
+                <div>
+                    <label for="dislikes">Dislikes (comma-separated):</label>
+                    <input type="text" id="dislikes">
+                </div>
+                <button onclick="savePersonalityTraits()">Save Personality Traits</button>
+            </div>
+        </div>
+        <div class="form-group">
+            <h2>Moderation</h2>
+            <div id="moderation-container">
+                <div>
+                    <label for="banned-words">Banned Words (comma-separated):</label>
+                    <input type="text" id="banned-words">
+                </div>
+                <div>
+                    <label for="link-filtering">Link Filtering:</label>
+                    <input type="checkbox" id="link-filtering">
+                </div>
+                <div>
+                    <label for="caps-filtering">Caps Filtering:</label>
+                    <input type="checkbox" id="caps-filtering">
+                </div>
+                <div>
+                    <label for="timeout-duration">Timeout Duration (seconds):</label>
+                    <input type="number" id="timeout-duration">
+                </div>
+                <button onclick="saveModeration()">Save Moderation Settings</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -62,6 +98,12 @@
         const logsContainer = document.getElementById("logs");
         const socialsContainer = document.getElementById("socials-container");
         const commandsList = document.getElementById("commands-list");
+        const bannedWordsInput = document.getElementById("banned-words");
+        const linkFilteringCheckbox = document.getElementById("link-filtering");
+        const capsFilteringCheckbox = document.getElementById("caps-filtering");
+        const timeoutDurationInput = document.getElementById("timeout-duration");
+        const likesInput = document.getElementById("likes");
+        const dislikesInput = document.getElementById("dislikes");
 
         freqInput.addEventListener("input", () => {
             freqVal.innerText = freqInput.value;
@@ -97,6 +139,19 @@
             personalityInput.value = config.personality;
             freqInput.value = config.auto_chat_freq;
             freqVal.innerText = config.auto_chat_freq;
+
+            // Populate moderation settings
+            const moderation = config.moderation || {};
+            bannedWordsInput.value = (moderation.banned_words || []).join(", ");
+            linkFilteringCheckbox.checked = moderation.link_filtering;
+            capsFilteringCheckbox.checked = moderation.caps_filtering;
+            timeoutDurationInput.value = moderation.timeout_duration;
+
+            // Populate personality traits
+            const personalityTraits = config.personality_traits || {};
+            likesInput.value = (personalityTraits.likes || []).join(", ");
+            dislikesInput.value = (personalityTraits.dislikes || []).join(", ");
+
             addLog("Config updated.");
         });
 
@@ -116,6 +171,12 @@
             commandsList.appendChild(li);
         }
 
+        const initialModeration = JSON.parse('{{ moderation | safe }}');
+        bannedWordsInput.value = (initialModeration.banned_words || []).join(", ");
+        linkFilteringCheckbox.checked = initialModeration.link_filtering;
+        capsFilteringCheckbox.checked = initialModeration.caps_filtering;
+        timeoutDurationInput.value = initialModeration.timeout_duration;
+
         function addSocial() {
             const socialDiv = document.createElement("div");
             socialDiv.innerHTML = `<input type="text" class="social-platform" placeholder="Platform"> <input type="text" class="social-link" placeholder="Link">`;
@@ -133,6 +194,24 @@
                 }
             });
             socket.emit("update_socials", {socials: socials});
+        }
+
+        function saveModeration() {
+            const moderation = {
+                banned_words: bannedWordsInput.value.split(",").map(word => word.trim()).filter(word => word),
+                link_filtering: linkFilteringCheckbox.checked,
+                caps_filtering: capsFilteringCheckbox.checked,
+                timeout_duration: parseInt(timeoutDurationInput.value)
+            };
+            socket.emit("update_moderation", {moderation: moderation});
+        }
+
+        function savePersonalityTraits() {
+            const personalityTraits = {
+                likes: likesInput.value.split(",").map(word => word.trim()).filter(word => word),
+                dislikes: dislikesInput.value.split(",").map(word => word.trim()).filter(word => word)
+            };
+            socket.emit("update_personality_traits", {personality_traits: personalityTraits});
         }
 
         socket.on("connect", () => {

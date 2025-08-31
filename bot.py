@@ -42,6 +42,20 @@ def load_or_create_config():
     if "socials" not in config:
         config["socials"] = {}
 
+    if "moderation" not in config:
+        config["moderation"] = {
+            "banned_words": [],
+            "link_filtering": True,
+            "caps_filtering": True,
+            "timeout_duration": 60
+        }
+
+    if "personality_traits" not in config:
+        config["personality_traits"] = {
+            "likes": [],
+            "dislikes": []
+        }
+
     if sys.stdin.isatty():
         channels_input = input("Enter Twitch channels (comma separated): ").strip()
         channels = [c.strip().lstrip("#") for c in channels_input.split(",") if c.strip()]
@@ -60,13 +74,22 @@ def generate_ai_response(prompt: str, config) -> str:
     headers = {
         "Content-Type": "application/json",
     }
-    data = {"contents":[{"parts":[{"text": f"Respond in personality: {config['personality']}\n{prompt}"}]}]}
-    
+    personality_prompt = f"Respond in personality: {config['personality']}"
+    if "personality_traits" in config:
+        likes = ", ".join(config["personality_traits"].get("likes", []))
+        if likes:
+            personality_prompt += f"\nLikes: {likes}"
+        dislikes = ", ".join(config["personality_traits"].get("dislikes", []))
+        if dislikes:
+            personality_prompt += f"\nDislikes: {dislikes}"
+
+    data = {"contents":[{"parts":[{"text": f"{personality_prompt}\n{prompt}"}]}]}
+
     try:
         r = requests.post(url, headers=headers, json=data, timeout=10)
         r.raise_for_status()
         resp = r.json()
-        
+
         # Parse Gemini Flash response
         text_parts = []
         candidates = resp.get("candidates", [])
@@ -112,7 +135,19 @@ class IRCBot:
             "socials": self.socials_command,
             "commands": self.commands_command
         }
+        self.user_data_file = "user_data.json"
+        self.user_data = self.load_user_data()
         threading.Thread(target=self.connect_and_listen, daemon=True).start()
+
+    def load_user_data(self):
+        if os.path.exists(self.user_data_file):
+            with open(self.user_data_file, "r") as f:
+                return json.load(f)
+        return {}
+
+    def save_user_data(self):
+        with open(self.user_data_file, "w") as f:
+            json.dump(self.user_data, f, indent=4)
 
     def connect_and_listen(self):
         while True:
@@ -158,6 +193,11 @@ class IRCBot:
             message = parts[2]
             print(f"[CHAT] {user}: {message}")
 
+            self.update_user_data(user, "message")
+
+            if self.moderate_message(message, user, channel):
+                return
+
             if message.startswith("!"):
                 command_parts = message.split(" ", 1)
                 command = command_parts[0][1:].lower()
@@ -172,6 +212,7 @@ class IRCBot:
 
             if tags.get("msg-id") == "sub" or tags.get("msg-id") == "resub":
                 user = tags["display-name"]
+                self.update_user_data(user, "subscription")
                 self.send_message(f"Thanks for the subscription, {user}!")
 
             elif tags.get("msg-id") == "raid":
@@ -213,6 +254,54 @@ class IRCBot:
     def commands_command(self, args, user, channel):
         commands_list = "!".join(self.commands.keys())
         self.send_message(f"Available commands: !{commands_list}")
+
+    def update_user_data(self, user, event_type):
+        if user not in self.user_data:
+            self.user_data[user] = {
+                "message_count": 0,
+                "is_subscriber": False
+            }
+
+        if event_type == "message":
+            self.user_data[user]["message_count"] += 1
+        elif event_type == "subscription":
+            self.user_data[user]["is_subscriber"] = True
+
+        self.save_user_data()
+
+    def moderate_message(self, message, user, channel):
+        moderation_config = self.config.get("moderation", {})
+
+        # Banned words
+        if moderation_config.get("banned_words"):
+            for word in moderation_config["banned_words"]:
+                if word in message.lower():
+                    self.delete_message(user, channel)
+                    self.timeout_user(user, channel)
+                    return True
+
+        # Link filtering
+        if moderation_config.get("link_filtering"):
+            if "http://" in message or "https://" in message or "www." in message:
+                self.delete_message(user, channel)
+                self.timeout_user(user, channel)
+                return True
+
+        # Caps filtering
+        if moderation_config.get("caps_filtering"):
+            if len(message) > 10 and message.isupper():
+                self.delete_message(user, channel)
+                self.timeout_user(user, channel)
+                return True
+
+        return False
+
+    def delete_message(self, user, channel):
+        self.send_message(f"/delete {user}")
+
+    def timeout_user(self, user, channel):
+        duration = self.config.get("moderation", {}).get("timeout_duration", 60)
+        self.send_message(f"/timeout {user} {duration}")
 
     def send_message(self, msg):
         # Split by paragraphs first for natural pauses

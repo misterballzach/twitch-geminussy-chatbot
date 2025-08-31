@@ -26,9 +26,13 @@ def create_dashboard_app(bot):
             print(f"Config: {config}")
             socials = json.dumps(config.get("socials", {}))
             commands = json.dumps(list(bot.commands.keys()))
+            moderation = json.dumps(config.get("moderation", {}))
+            personality_traits = json.dumps(config.get("personality_traits", {}))
             print(f"Socials: {socials}")
             print(f"Commands: {commands}")
-            return render_template("dashboard.html", personality=config["personality"], auto_chat_freq=config["auto_chat_freq"], socials=socials, commands=commands)
+            print(f"Moderation: {moderation}")
+            print(f"Personality Traits: {personality_traits}")
+            return render_template("dashboard.html", personality=config["personality"], auto_chat_freq=config["auto_chat_freq"], socials=socials, commands=commands, moderation=moderation, personality_traits=personality_traits)
         except Exception as e:
             print(f"Error in index route: {e}")
             return "Internal Server Error", 500
@@ -62,6 +66,26 @@ def create_dashboard_app(bot):
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
         bot.config["socials"] = config["socials"]
+
+    @socketio.on("update_moderation")
+    def handle_update_moderation(data):
+        print(f"Updating moderation with: {data}")
+        config = load_config()
+        config["moderation"] = data.get("moderation", config["moderation"])
+        save_config(config)
+        emit("config_updated", config, broadcast=True)
+        # Update the bot's config as well
+        bot.config["moderation"] = config["moderation"]
+
+    @socketio.on("update_personality_traits")
+    def handle_update_personality_traits(data):
+        print(f"Updating personality traits with: {data}")
+        config = load_config()
+        config["personality_traits"] = data.get("personality_traits", config["personality_traits"])
+        save_config(config)
+        emit("config_updated", config, broadcast=True)
+        # Update the bot's config as well
+        bot.config["personality_traits"] = config["personality_traits"]
 
     app.debug = True
     return app, socketio
