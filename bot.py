@@ -230,6 +230,12 @@ class IRCBot:
                 command = command_parts[0][1:].lower()
                 args = command_parts[1] if len(command_parts) > 1 else ""
                 self.handle_command(command, args, user, channel)
+            elif self.nick.lower() in message.lower():
+                prompt = message
+                context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
+                resp = generate_ai_response(f"{context}\n{user} says: {prompt}", self.config)
+                save_memory(user, prompt, resp)
+                self.send_message(resp)
 
         elif "USERNOTICE" in line:
             parts = line.split(":", 2)
