@@ -1,6 +1,7 @@
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 import json
+from bot import generate_ai_response
 
 CONFIG_FILE = "bot_config.json"
 
@@ -48,7 +49,8 @@ def create_dashboard_app(bot):
     def handle_send_message(data):
         msg = data.get("message")
         if msg and bot:
-            rewritten = bot.generate_ai_response(f"Rewrite this in my personality: {msg}")
+            config = load_config()
+            rewritten = generate_ai_response(f"Rewrite this in my personality: {msg}", config)
             bot.send_message(rewritten)
 
     @socketio.on("update_socials")
