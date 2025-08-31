@@ -54,10 +54,9 @@ def load_or_create_config():
 
 # ---------------- GEMINI AI ----------------
 def generate_ai_response(prompt: str, config) -> str:
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
     headers = {
         "Content-Type": "application/json",
-        "X-Goog-Api-Key": config["gemini_api_key"]
     }
     data = {"contents":[{"parts":[{"text": f"Respond in personality: {config['personality']}\n{prompt}"}]}]}
     
