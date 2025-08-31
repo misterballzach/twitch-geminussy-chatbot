@@ -1,10 +1,4 @@
-"""
-Gemini Twitch Bot (IRC + Gemini Flash) - Python 3.13+
-"""
-
 import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap
-from flask import Flask, render_template_string
-from flask_socketio import SocketIO, emit
 
 # ---------------- CONFIG ----------------
 CONFIG_FILE = "bot_config.json"
@@ -34,26 +28,38 @@ def prompt_missing_config(config):
 def load_or_create_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f: config = json.load(f)
-        config = prompt_missing_config(config)
+        if sys.stdin.isatty():
+            config = prompt_missing_config(config)
     else:
-        config = prompt_missing_config({})
-    channels_input = input("Enter Twitch channels (comma separated): ").strip()
-    channels = [c.strip().lstrip("#") for c in channels_input.split(",") if c.strip()]
-    config["channels"] = channels
-    with open(CONFIG_FILE, "w") as f: json.dump(config, f, indent=4)
-    print("Config loaded and saved.")
+        if sys.stdin.isatty():
+            config = prompt_missing_config({})
+        else:
+            print("ERROR: bot_config.json not found. Please run interactively once to create it.")
+            sys.exit(1)
+
+    if "socials" not in config:
+        config["socials"] = {}
+
+    if sys.stdin.isatty():
+        channels_input = input("Enter Twitch channels (comma separated): ").strip()
+        channels = [c.strip().lstrip("#") for c in channels_input.split(",") if c.strip()]
+        config["channels"] = channels
+        with open(CONFIG_FILE, "w") as f: json.dump(config, f, indent=4)
+        print("Config loaded and saved.")
+
+    if "channels" not in config:
+        config["channels"] = []
+
     return config
 
-CONFIG = load_or_create_config()
-
 # ---------------- GEMINI AI ----------------
-def generate_ai_response(prompt: str) -> str:
+def generate_ai_response(prompt: str, config) -> str:
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     headers = {
         "Content-Type": "application/json",
-        "X-Goog-Api-Key": CONFIG["gemini_api_key"]
+        "X-Goog-Api-Key": config["gemini_api_key"]
     }
-    data = {"contents":[{"parts":[{"text": f"Respond in personality: {CONFIG['personality']}\n{prompt}"}]}]}
+    data = {"contents":[{"parts":[{"text": f"Respond in personality: {config['personality']}\n{prompt}"}]}]}
     
     try:
         r = requests.post(url, headers=headers, json=data, timeout=10)
@@ -87,73 +93,24 @@ def save_memory(user, msg, response):
 def get_recent_memory(n=5):
     return MEMORY["chat_history"][-n:]
 
-# ---------------- DASHBOARD ----------------
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app, cors_allowed_origins="*")
-
-DASHBOARD_HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-<title>Gemini Twitch Bot Dashboard</title>
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-</head>
-<body>
-<h1>Gemini Twitch Bot Dashboard</h1>
-<label>Personality:</label>
-<input type="text" id="personality" value="{{ personality }}"><br><br>
-<label>Auto Chat Frequency:</label>
-<input type="range" id="freq" min="0" max="1" step="0.01" value="{{ auto_chat_freq }}">
-<span id="freq_val">{{ auto_chat_freq }}</span><br><br>
-<label>Send !say Message:</label>
-<input type="text" id="say_msg"><button onclick="sendMessage()">Send</button>
-<script>
-const socket=io();
-const personalityInput=document.getElementById("personality");
-const freqInput=document.getElementById("freq");
-const freqVal=document.getElementById("freq_val");
-freqInput.addEventListener("input",()=>{freqVal.innerText=freqInput.value;updateConfig();});
-personalityInput.addEventListener("change",updateConfig);
-function updateConfig(){socket.emit("update_config",{personality:personalityInput.value,auto_chat_freq:parseFloat(freqInput.value)});}
-function sendMessage(){const msg=document.getElementById("say_msg").value;if(msg){socket.emit("send_message",{message:msg});document.getElementById("say_msg").value="";}}
-socket.on("config_updated",config=>{personalityInput.value=config.personality;freqInput.value=config.auto_chat_freq;freqVal.innerText=config.auto_chat_freq;});
-</script>
-</body>
-</html>
-"""
-
-@app.route("/")
-def index(): 
-    return render_template_string(DASHBOARD_HTML, personality=CONFIG["personality"], auto_chat_freq=CONFIG["auto_chat_freq"])
-
-@socketio.on("update_config")
-def handle_update(data):
-    CONFIG["personality"] = data.get("personality", CONFIG["personality"])
-    CONFIG["auto_chat_freq"] = data.get("auto_chat_freq", CONFIG["auto_chat_freq"])
-    with open(CONFIG_FILE, "w") as f: json.dump(CONFIG, f, indent=4)
-    emit("config_updated", CONFIG, broadcast=True)
-
-@socketio.on("send_message")
-def handle_send_message(data):
-    msg = data.get("message")
-    if msg and bot:
-        rewritten = generate_ai_response(f"Rewrite this in my personality: {msg}")
-        bot.send_message(rewritten)
-
-def run_dashboard():
-    socketio.run(app, port=5000)
-
 # ---------------- IRC BOT ----------------
 class IRCBot:
-    def __init__(self):
+    def __init__(self, config):
         self.server = "irc.chat.twitch.tv"
         self.port = 6667
-        self.nick = CONFIG["bot_username"]
-        self.token = CONFIG["bot_token"]
-        self.channels = CONFIG["channels"]
+        self.config = config
+        self.nick = self.config["bot_username"]
+        self.token = self.config["bot_token"]
+        self.channels = self.config["channels"]
         self.sock = None
         self.loop = asyncio.get_event_loop()
+        self.commands = {
+            "ai": self.ai_command,
+            "say": self.say_command,
+            "uptime": self.uptime_command,
+            "socials": self.socials_command,
+            "commands": self.commands_command
+        }
         threading.Thread(target=self.connect_and_listen, daemon=True).start()
 
     def connect_and_listen(self):
@@ -199,14 +156,62 @@ class IRCBot:
             channel = parts[1].split(" ")[2][1:]
             message = parts[2]
             print(f"[CHAT] {user}: {message}")
-            if message.lower().startswith("!ai "):
-                prompt = message[4:]
-                context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
-                resp = generate_ai_response(f"{context}\n{user} says: {prompt}")
-                save_memory(user, prompt, resp)
-                self.send_message(resp)
-            elif message.lower().startswith("!say "):
-                self.send_message(message[5:])
+
+            if message.startswith("!"):
+                command_parts = message.split(" ", 1)
+                command = command_parts[0][1:].lower()
+                args = command_parts[1] if len(command_parts) > 1 else ""
+                self.handle_command(command, args, user, channel)
+
+        elif "USERNOTICE" in line:
+            parts = line.split(":", 2)
+            if len(parts) < 3: return
+            message = parts[2]
+            tags = {t.split("=")[0]: t.split("=")[1] for t in parts[0].split(";")}
+
+            if tags.get("msg-id") == "sub" or tags.get("msg-id") == "resub":
+                user = tags["display-name"]
+                self.send_message(f"Thanks for the subscription, {user}!")
+
+            elif tags.get("msg-id") == "raid":
+                user = tags["display-name"]
+                viewers = tags["msg-param-viewerCount"]
+                self.send_message(f"Welcome to the channel, {user} and their {viewers} raiders!")
+
+    def handle_command(self, command, args, user, channel):
+        if command in self.commands:
+            self.commands[command](args, user, channel)
+
+    def ai_command(self, args, user, channel):
+        prompt = args
+        context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
+        resp = generate_ai_response(f"{context}\n{user} says: {prompt}", self.config)
+        save_memory(user, prompt, resp)
+        self.send_message(resp)
+
+    def say_command(self, args, user, channel):
+        self.send_message(args)
+
+    def uptime_command(self, args, user, channel):
+        try:
+            url = f"https://decapi.me/twitch/uptime/{channel}"
+            response = requests.get(url)
+            response.raise_for_status()
+            self.send_message(f"Stream has been live for: {response.text}")
+        except requests.exceptions.RequestException as e:
+            print(f"[ERROR] Uptime command failed: {e}")
+            self.send_message("Could not retrieve uptime.")
+
+    def socials_command(self, args, user, channel):
+        if "socials" in self.config and self.config["socials"]:
+            socials_message = "Follow us on social media: " + ", ".join([f"{platform}: {link}" for platform, link in self.config["socials"].items()])
+            self.send_message(socials_message)
+        else:
+            self.send_message("No social media links configured.")
+
+    def commands_command(self, args, user, channel):
+        commands_list = "!".join(self.commands.keys())
+        self.send_message(f"Available commands: !{commands_list}")
 
     def send_message(self, msg):
         # Split by paragraphs first for natural pauses
@@ -222,12 +227,3 @@ class IRCBot:
                         time.sleep(5)  # 5-second delay between chunks
                     except Exception as e:
                         print(f"[ERROR] Sending message failed: {e}")
-
-# ---------------- RUN ----------------
-if __name__ == "__main__":
-    bot = IRCBot()
-    threading.Thread(target=run_dashboard, daemon=True).start()
-    try:
-        asyncio.get_event_loop().run_forever()
-    except RuntimeError:
-        asyncio.new_event_loop().run_forever()
