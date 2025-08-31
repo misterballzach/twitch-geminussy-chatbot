@@ -66,8 +66,8 @@
             </div>
         </div>
         <div class="form-group">
-            <h2>User Data</h2>
-            <div id="user-data-container">
+            <h2>User Explorer</h2>
+            <div id="user-explorer-container">
                 <!-- User data will be dynamically added here -->
             </div>
             <button onclick="refreshUserData()">Refresh User Data</button>
@@ -111,7 +111,7 @@
         const timeoutDurationInput = document.getElementById("timeout-duration");
         const likesInput = document.getElementById("likes");
         const dislikesInput = document.getElementById("dislikes");
-        const userDataContainer = document.getElementById("user-data-container");
+        const userExplorerContainer = document.getElementById("user-explorer-container");
 
         freqInput.addEventListener("input", () => {
             freqVal.innerText = freqInput.value;
@@ -227,13 +227,14 @@
         }
 
         socket.on("user_data", (data) => {
-            userDataContainer.innerHTML = "";
+            userExplorerContainer.innerHTML = "";
             const table = document.createElement("table");
             table.innerHTML = `
                 <tr>
                     <th>Username</th>
                     <th>Message Count</th>
                     <th>Is Subscriber</th>
+                    <th>Favouritism Score</th>
                 </tr>
             `;
             for (const [username, user_data] of Object.entries(data)) {
@@ -242,10 +243,11 @@
                     <td>${username}</td>
                     <td>${user_data.message_count}</td>
                     <td>${user_data.is_subscriber ? 'Yes' : 'No'}</td>
+                    <td>${user_data.favouritism_score}</td>
                 `;
                 table.appendChild(row);
             }
-            userDataContainer.appendChild(table);
+            userExplorerContainer.appendChild(table);
         });
 
         socket.on("connect", () => {

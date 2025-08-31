@@ -76,11 +76,15 @@ def load_or_create_config():
     return config
 
 # ---------------- GEMINI AI ----------------
-def generate_ai_response(prompt: str, config) -> str:
+def generate_ai_response(prompt: str, user, config) -> str:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
     headers = {
         "Content-Type": "application/json",
     }
+
+    user_data = get_user(user)
+    favouritism_score = user_data["favouritism_score"] if user_data else 0
+
     personality_prompt = f"Respond in personality: {config['personality']}"
     if "personality_traits" in config:
         likes = ", ".join(config["personality_traits"].get("likes", []))
@@ -90,7 +94,8 @@ def generate_ai_response(prompt: str, config) -> str:
         if dislikes:
             personality_prompt += f"\nDislikes: {dislikes}"
 
-    data = {"contents":[{"parts":[{"text": f"{personality_prompt}\n{prompt}"}]}]}
+    prompt_with_context = f"{personality_prompt}\nUser '{user}' has a favouritism score of {favouritism_score}.\n{prompt}"
+    data = {"contents":[{"parts":[{"text": prompt_with_context}]}]}
 
     try:
         r = requests.post(url, headers=headers, json=data, timeout=10)
@@ -115,10 +120,10 @@ def generate_ai_response(prompt: str, config) -> str:
         print(f"[ERROR] Gemini API call failed: {e}, full response: {r.text if 'r' in locals() else 'no response'}")
         return "Hmm… I couldn't come up with a response!"
 
-def analyze_sentiment_and_update_preferences(message, config):
+def analyze_sentiment_and_update_preferences(message, user, config):
     prompt = f"Analyze the sentiment of the following message and identify the main topics. Respond with a JSON object with two keys: 'sentiment' (either 'positive', 'negative', or 'neutral') and 'topics' (a list of strings). Message: {message}"
 
-    response_text = generate_ai_response(prompt, config)
+    response_text = generate_ai_response(prompt, user, config)
 
     try:
         response_json = json.loads(response_text)
@@ -128,8 +133,10 @@ def analyze_sentiment_and_update_preferences(message, config):
 
         if sentiment == "positive":
             config["personality_traits"]["likes"].extend(topics)
+            create_or_update_user(user, favouritism_score_increment=1)
         elif sentiment == "negative":
             config["personality_traits"]["dislikes"].extend(topics)
+            create_or_update_user(user, favouritism_score_increment=-1)
 
         # Remove duplicates
         config["personality_traits"]["likes"] = list(set(config["personality_traits"]["likes"]))
@@ -220,7 +227,7 @@ class IRCBot:
             create_or_update_user(user, message_count_increment=1)
 
             if random.random() < self.config.get("sentiment_analysis_probability", 0.1):
-                analyze_sentiment_and_update_preferences(message, self.config)
+                analyze_sentiment_and_update_preferences(message, user, self.config)
 
             if self.moderate_message(message, user, channel):
                 return
@@ -233,7 +240,7 @@ class IRCBot:
             elif self.nick.lower() in message.lower():
                 prompt = message
                 context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
-                resp = generate_ai_response(f"{context}\n{user} says: {prompt}", self.config)
+                resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config)
                 save_memory(user, prompt, resp)
                 self.send_message(resp)
 
@@ -245,7 +252,7 @@ class IRCBot:
 
             if tags.get("msg-id") == "sub" or tags.get("msg-id") == "resub":
                 user = tags["display-name"]
-                create_or_update_user(user, is_subscriber=True)
+                create_or_update_user(user, is_subscriber=True, favouritism_score_increment=10)
                 self.send_message(f"Thanks for the subscription, {user}!")
 
             elif tags.get("msg-id") == "raid":
@@ -260,7 +267,7 @@ class IRCBot:
     def ai_command(self, args, user, channel):
         prompt = args
         context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
-        resp = generate_ai_response(f"{context}\n{user} says: {prompt}", self.config)
+        resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config)
         save_memory(user, prompt, resp)
         self.send_message(resp)
 
@@ -296,7 +303,7 @@ class IRCBot:
                 for entry in chat_history:
                     prompt += f"{entry['user']}: {entry['message']}\n"
 
-                response = generate_ai_response(prompt, self.config)
+                response = generate_ai_response(prompt, self.nick, self.config)
                 self.send_message(response)
 
         self.auto_chat_timer = threading.Timer(self.config.get("auto_chat_interval", 600), self.auto_chat)
@@ -335,6 +342,7 @@ class IRCBot:
     def timeout_user(self, user, channel):
         duration = self.config.get("moderation", {}).get("timeout_duration", 60)
         self.send_message(f"/timeout {user} {duration}")
+        create_or_update_user(user, favouritism_score_increment=-5)
 
     def send_message(self, msg):
         if not msg:
