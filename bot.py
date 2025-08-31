@@ -19,6 +19,8 @@ def prompt_missing_config(config):
                     except: continue
             else:
                 val = input(f"Enter {field.replace('_',' ')}: ").strip()
+                if field == "gemini_api_key":
+                    val = val.strip('\'" ,')
             config[field] = val
             updated = True
     if updated:
