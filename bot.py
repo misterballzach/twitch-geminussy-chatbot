@@ -1,4 +1,5 @@
 import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap
+from database import create_tables, create_or_update_user, get_user
 
 # ---------------- CONFIG ----------------
 CONFIG_FILE = "bot_config.json"
@@ -50,6 +51,12 @@ def load_or_create_config():
             "timeout_duration": 60
         }
 
+    if "sentiment_analysis_probability" not in config:
+        config["sentiment_analysis_probability"] = 0.1
+
+    if "auto_chat_interval" not in config:
+        config["auto_chat_interval"] = 600
+
     if "personality_traits" not in config:
         config["personality_traits"] = {
             "likes": [],
@@ -74,6 +81,49 @@ def generate_ai_response(prompt: str, config) -> str:
     headers = {
         "Content-Type": "application/json",
     }
+def analyze_sentiment_and_update_preferences(message, config):
+    prompt = f"Analyze the sentiment of the following message and identify the main topics. Respond with a JSON object with two keys: 'sentiment' (either 'positive', 'negative', or 'neutral') and 'topics' (a list of strings). Message: {message}"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
+    headers = {
+        "Content-Type": "application/json",
+    }
+    data = {"contents":[{"parts":[{"text": prompt}]}]}
+
+    try:
+        r = requests.post(url, headers=headers, json=data, timeout=10)
+        r.raise_for_status()
+        resp = r.json()
+
+        text_parts = []
+        candidates = resp.get("candidates", [])
+        if candidates:
+            content = candidates[0].get("content", {})
+            parts = content.get("parts", [])
+            for part in parts:
+                if "text" in part:
+                    text_parts.append(part["text"])
+
+        response_text = " ".join(text_parts).strip()
+        response_json = json.loads(response_text)
+
+        sentiment = response_json.get("sentiment")
+        topics = response_json.get("topics", [])
+
+        if sentiment == "positive":
+            config["personality_traits"]["likes"].extend(topics)
+        elif sentiment == "negative":
+            config["personality_traits"]["dislikes"].extend(topics)
+
+        # Remove duplicates
+        config["personality_traits"]["likes"] = list(set(config["personality_traits"]["likes"]))
+        config["personality_traits"]["dislikes"] = list(set(config["personality_traits"]["dislikes"]))
+
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=4)
+
+    except Exception as e:
+        print(f"[ERROR] Sentiment analysis failed: {e}")
     personality_prompt = f"Respond in personality: {config['personality']}"
     if "personality_traits" in config:
         likes = ", ".join(config["personality_traits"].get("likes", []))
@@ -135,19 +185,10 @@ class IRCBot:
             "socials": self.socials_command,
             "commands": self.commands_command
         }
-        self.user_data_file = "user_data.json"
-        self.user_data = self.load_user_data()
+        create_tables()
         threading.Thread(target=self.connect_and_listen, daemon=True).start()
-
-    def load_user_data(self):
-        if os.path.exists(self.user_data_file):
-            with open(self.user_data_file, "r") as f:
-                return json.load(f)
-        return {}
-
-    def save_user_data(self):
-        with open(self.user_data_file, "w") as f:
-            json.dump(self.user_data, f, indent=4)
+        self.auto_chat_timer = threading.Timer(self.config.get("auto_chat_interval", 600), self.auto_chat)
+        self.auto_chat_timer.start()
 
     def connect_and_listen(self):
         while True:
@@ -193,7 +234,10 @@ class IRCBot:
             message = parts[2]
             print(f"[CHAT] {user}: {message}")
 
-            self.update_user_data(user, "message")
+            create_or_update_user(user, message_count_increment=1)
+
+            if random.random() < self.config.get("sentiment_analysis_probability", 0.1):
+                analyze_sentiment_and_update_preferences(message, self.config)
 
             if self.moderate_message(message, user, channel):
                 return
@@ -212,7 +256,7 @@ class IRCBot:
 
             if tags.get("msg-id") == "sub" or tags.get("msg-id") == "resub":
                 user = tags["display-name"]
-                self.update_user_data(user, "subscription")
+                create_or_update_user(user, is_subscriber=True)
                 self.send_message(f"Thanks for the subscription, {user}!")
 
             elif tags.get("msg-id") == "raid":
@@ -255,19 +299,19 @@ class IRCBot:
         commands_list = "!".join(self.commands.keys())
         self.send_message(f"Available commands: !{commands_list}")
 
-    def update_user_data(self, user, event_type):
-        if user not in self.user_data:
-            self.user_data[user] = {
-                "message_count": 0,
-                "is_subscriber": False
-            }
+    def auto_chat(self):
+        if random.random() < self.config.get("auto_chat_freq", 0.2):
+            chat_history = get_recent_memory(10)
+            if len(chat_history) > 5:
+                prompt = "Based on the following chat history, what would be a good comment or question to add to the conversation? Keep it short and engaging.\n\n"
+                for entry in chat_history:
+                    prompt += f"{entry['user']}: {entry['message']}\n"
 
-        if event_type == "message":
-            self.user_data[user]["message_count"] += 1
-        elif event_type == "subscription":
-            self.user_data[user]["is_subscriber"] = True
+                response = generate_ai_response(prompt, self.config)
+                self.send_message(response)
 
-        self.save_user_data()
+        self.auto_chat_timer = threading.Timer(self.config.get("auto_chat_interval", 600), self.auto_chat)
+        self.auto_chat_timer.start()
 
     def moderate_message(self, message, user, channel):
         moderation_config = self.config.get("moderation", {})
