@@ -2,7 +2,7 @@
 Gemini Twitch Bot (IRC + Gemini Flash) - Python 3.13+
 """
 
-import os, sys, json, ssl, socket, asyncio, random, threading, requests
+import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap
 from flask import Flask, render_template_string
 from flask_socketio import SocketIO, emit
 
@@ -124,7 +124,8 @@ socket.on("config_updated",config=>{personalityInput.value=config.personality;fr
 """
 
 @app.route("/")
-def index(): return render_template_string(DASHBOARD_HTML, personality=CONFIG["personality"], auto_chat_freq=CONFIG["auto_chat_freq"])
+def index(): 
+    return render_template_string(DASHBOARD_HTML, personality=CONFIG["personality"], auto_chat_freq=CONFIG["auto_chat_freq"])
 
 @socketio.on("update_config")
 def handle_update(data):
@@ -138,7 +139,7 @@ def handle_send_message(data):
     msg = data.get("message")
     if msg and bot:
         rewritten = generate_ai_response(f"Rewrite this in my personality: {msg}")
-        bot.send_message(f"!say {rewritten}")
+        bot.send_message(rewritten)
 
 def run_dashboard():
     socketio.run(app, port=5000)
@@ -208,12 +209,19 @@ class IRCBot:
                 self.send_message(message[5:])
 
     def send_message(self, msg):
-        for ch in self.channels:
-            try:
-                self.sock.send(f"PRIVMSG #{ch} :{msg}\r\n".encode("utf-8"))
-                print(f"[BOT] Sent to #{ch}: {msg}")
-            except Exception as e:
-                print(f"[ERROR] Sending message failed: {e}")
+        # Split by paragraphs first for natural pauses
+        paragraphs = msg.split("\n")
+        for paragraph in paragraphs:
+            # Split into 500-character chunks
+            chunks = textwrap.wrap(paragraph, width=500, replace_whitespace=False)
+            for ch in self.channels:
+                for chunk in chunks:
+                    try:
+                        self.sock.send(f"PRIVMSG #{ch} :{chunk}\r\n".encode("utf-8"))
+                        print(f"[BOT] Sent to #{ch}: {chunk}")
+                        time.sleep(5)  # 5-second delay between chunks
+                    except Exception as e:
+                        print(f"[ERROR] Sending message failed: {e}")
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
