@@ -1,4 +1,4 @@
-import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap
+import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap, traceback
 from database import create_tables, create_or_update_user, get_user
 
 # ---------------- CONFIG ----------------
@@ -264,6 +264,7 @@ class IRCBot:
                         self.send_message(f"Welcome to the channel, {user} and their {viewers} raiders!")
         except Exception as e:
             print(f"[ERROR] Error in handle_line: {e}")
+            traceback.print_exc()
 
     def handle_command(self, command, args, user, channel):
         if command in self.commands:
