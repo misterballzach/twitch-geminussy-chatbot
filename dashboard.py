@@ -55,7 +55,7 @@ def create_dashboard_app(bot):
         msg = data.get("message")
         if msg and bot:
             config = load_config()
-            rewritten = generate_ai_response(f"Rewrite this in my personality: {msg}", config)
+            rewritten = generate_ai_response(f"Rewrite this in my personality: {msg}", bot.nick, config)
             bot.send_message(rewritten)
 
     @socketio.on("update_socials")

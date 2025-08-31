@@ -13,7 +13,8 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             message_count INTEGER NOT NULL DEFAULT 0,
-            is_subscriber BOOLEAN NOT NULL DEFAULT 0
+            is_subscriber BOOLEAN NOT NULL DEFAULT 0,
+            favouritism_score INTEGER NOT NULL DEFAULT 0
         )
     """)
     conn.commit()
@@ -25,20 +26,21 @@ def get_user(username):
     conn.close()
     return user
 
-def create_or_update_user(username, message_count_increment=0, is_subscriber=None):
+def create_or_update_user(username, message_count_increment=0, is_subscriber=None, favouritism_score_increment=0):
     conn = get_db_connection()
     user = get_user(username)
     if user is None:
         conn.execute(
-            "INSERT INTO users (username, message_count, is_subscriber) VALUES (?, ?, ?)",
-            (username, message_count_increment, 1 if is_subscriber else 0)
+            "INSERT INTO users (username, message_count, is_subscriber, favouritism_score) VALUES (?, ?, ?, ?)",
+            (username, message_count_increment, 1 if is_subscriber else 0, favouritism_score_increment)
         )
     else:
         new_message_count = user["message_count"] + message_count_increment
         new_is_subscriber = is_subscriber if is_subscriber is not None else user["is_subscriber"]
+        new_favouritism_score = user["favouritism_score"] + favouritism_score_increment
         conn.execute(
-            "UPDATE users SET message_count = ?, is_subscriber = ? WHERE username = ?",
-            (new_message_count, 1 if new_is_subscriber else 0, username)
+            "UPDATE users SET message_count = ?, is_subscriber = ?, favouritism_score = ? WHERE username = ?",
+            (new_message_count, 1 if new_is_subscriber else 0, new_favouritism_score, username)
         )
     conn.commit()
     conn.close()
