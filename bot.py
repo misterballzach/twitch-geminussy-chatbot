@@ -213,52 +213,57 @@ class IRCBot:
                 break
 
     def handle_line(self, line):
-        print(f"[IRC RAW] {line}")
-        if line.startswith("PING"):
-            self.sock.send(f"PONG {line.split()[1]}\r\n".encode("utf-8"))
-        elif "PRIVMSG" in line:
-            parts = line.split(":", 2)
-            if len(parts) < 3: return
-            user = parts[1].split("!")[0]
-            channel = parts[1].split(" ")[2][1:]
-            message = parts[2]
-            print(f"[CHAT] {user}: {message}")
+        try:
+            print(f"[IRC RAW] {line}")
+            if line.startswith("PING"):
+                self.sock.send(f"PONG {line.split()[1]}\r\n".encode("utf-8"))
+            elif "PRIVMSG" in line:
+                parts = line.split(":", 2)
+                if len(parts) < 3: return
+                user = parts[1].split("!")[0]
+                channel = parts[1].split(" ")[2][1:]
+                message = parts[2]
+                print(f"[CHAT] {user}: {message}")
 
-            create_or_update_user(user, message_count_increment=1)
+                create_or_update_user(user, message_count_increment=1)
 
-            if random.random() < self.config.get("sentiment_analysis_probability", 0.1):
-                analyze_sentiment_and_update_preferences(message, user, self.config)
+                if random.random() < self.config.get("sentiment_analysis_probability", 0.1):
+                    analyze_sentiment_and_update_preferences(message, user, self.config)
 
-            if self.moderate_message(message, user, channel):
-                return
+                if self.moderate_message(message, user, channel):
+                    return
 
-            if message.startswith("!"):
-                command_parts = message.split(" ", 1)
-                command = command_parts[0][1:].lower()
-                args = command_parts[1] if len(command_parts) > 1 else ""
-                self.handle_command(command, args, user, channel)
-            elif self.nick.lower() in message.lower():
-                prompt = message
-                context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
-                resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config)
-                save_memory(user, prompt, resp)
-                self.send_message(resp)
+                if message.startswith("!"):
+                    command_parts = message.split(" ", 1)
+                    command = command_parts[0][1:].lower()
+                    args = command_parts[1] if len(command_parts) > 1 else ""
+                    self.handle_command(command, args, user, channel)
+                elif self.nick.lower() in message.lower():
+                    prompt = message
+                    context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
+                    resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config)
+                    save_memory(user, prompt, resp)
+                    self.send_message(resp)
 
-        elif "USERNOTICE" in line:
-            parts = line.split(":", 2)
-            if len(parts) < 3: return
-            message = parts[2]
-            tags = {t.split("=")[0]: t.split("=")[1] for t in parts[0].split(";")}
+            elif "USERNOTICE" in line:
+                parts = line.split(":", 2)
+                if len(parts) < 3: return
+                message = parts[2]
+                tags = {t.split("=")[0]: t.split("=")[1] for t in parts[0].split(";") if "=" in t}
 
-            if tags.get("msg-id") == "sub" or tags.get("msg-id") == "resub":
-                user = tags["display-name"]
-                create_or_update_user(user, is_subscriber=True, favouritism_score_increment=10)
-                self.send_message(f"Thanks for the subscription, {user}!")
+                if tags.get("msg-id") == "sub" or tags.get("msg-id") == "resub":
+                    user = tags.get("display-name")
+                    if user:
+                        create_or_update_user(user, is_subscriber=True, favouritism_score_increment=10)
+                        self.send_message(f"Thanks for the subscription, {user}!")
 
-            elif tags.get("msg-id") == "raid":
-                user = tags["display-name"]
-                viewers = tags["msg-param-viewerCount"]
-                self.send_message(f"Welcome to the channel, {user} and their {viewers} raiders!")
+                elif tags.get("msg-id") == "raid":
+                    user = tags.get("display-name")
+                    viewers = tags.get("msg-param-viewerCount")
+                    if user and viewers:
+                        self.send_message(f"Welcome to the channel, {user} and their {viewers} raiders!")
+        except Exception as e:
+            print(f"[ERROR] Error in handle_line: {e}")
 
     def handle_command(self, command, args, user, channel):
         if command in self.commands:
