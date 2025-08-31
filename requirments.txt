@@ -1,0 +1,5 @@
+twitchio
+requests
+flask
+flask-socketio
+eventlet
