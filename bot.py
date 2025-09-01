@@ -305,11 +305,13 @@ class IRCBot:
         if random.random() < self.config.get("auto_chat_freq", 0.2):
             chat_history = get_recent_memory(10)
             if len(chat_history) > 5:
-                prompt = "Based on the following chat history, what would be a good comment or question to add to the conversation? Keep it short and engaging.\n\n"
+                prompt = "Based on the following chat history, what would be a good comment or question to add to the conversation? Respond in 1 or 2 short sentences. Keep it short and engaging.\n\n"
                 for entry in chat_history:
                     prompt += f"{entry['user']}: {entry['message']}\n"
 
                 response = generate_ai_response(prompt, self.nick, self.config)
+                if len(response) > 200:
+                    response = response[:200] + "..."
                 self.send_message(response)
 
         self.auto_chat_timer = threading.Timer(self.config.get("auto_chat_interval", 600), self.auto_chat)
