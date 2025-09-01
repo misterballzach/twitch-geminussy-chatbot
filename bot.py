@@ -373,10 +373,13 @@ class IRCBot:
             chunks = textwrap.wrap(paragraph, width=500, replace_whitespace=False)
             for ch in self.channels:
                 for chunk in chunks:
-                    try:
-                        delay = base_delay + (len(chunk) * delay_per_character)
-                        time.sleep(delay)
-                        self.sock.send(f"PRIVMSG #{ch} :{chunk}\r\n".encode("utf-8"))
-                        print(f"[BOT] Sent to #{ch}: {chunk}")
-                    except Exception as e:
-                        print(f"[ERROR] Sending message failed: {e}")
+                    delay = base_delay + (len(chunk) * delay_per_character)
+                    threading.Thread(target=self._send_message_chunk, args=(ch, chunk, delay)).start()
+
+    def _send_message_chunk(self, channel, chunk, delay):
+        try:
+            time.sleep(delay)
+            self.sock.send(f"PRIVMSG #{channel} :{chunk}\r\n".encode("utf-8"))
+            print(f"[BOT] Sent to #{channel}: {chunk}")
+        except Exception as e:
+            print(f"[ERROR] Sending message failed: {e}")
