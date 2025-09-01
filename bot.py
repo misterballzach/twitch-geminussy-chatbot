@@ -174,6 +174,7 @@ class IRCBot:
         self.channels = self.config["channels"]
         self.sock = None
         self.loop = asyncio.get_event_loop()
+        self.sock_lock = threading.Lock()
         self.commands = {
             "ai": self.ai_command,
             "say": self.say_command,
@@ -379,7 +380,8 @@ class IRCBot:
     def _send_message_chunk(self, channel, chunk, delay):
         try:
             time.sleep(delay)
-            self.sock.send(f"PRIVMSG #{channel} :{chunk}\r\n".encode("utf-8"))
+            with self.sock_lock:
+                self.sock.send(f"PRIVMSG #{channel} :{chunk}\r\n".encode("utf-8"))
             print(f"[BOT] Sent to #{channel}: {chunk}")
         except Exception as e:
             print(f"[ERROR] Sending message failed: {e}")
