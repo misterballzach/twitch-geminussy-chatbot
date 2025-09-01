@@ -235,6 +235,7 @@
                     <th>Message Count</th>
                     <th>Is Subscriber</th>
                     <th>Favouritism Score</th>
+                    <th></th>
                 </tr>
             `;
             for (const [username, user_data] of Object.entries(data)) {
@@ -243,12 +244,19 @@
                     <td>${username}</td>
                     <td>${user_data.message_count}</td>
                     <td>${user_data.is_subscriber ? 'Yes' : 'No'}</td>
-                    <td>${user_data.favouritism_score}</td>
+                    <td><input type="number" value="${user_data.favouritism_score}" id="favouritism-score-${username}"></td>
+                    <td><button onclick="updateFavouritismScore('${username}')">Save</button></td>
                 `;
                 table.appendChild(row);
             }
             userExplorerContainer.appendChild(table);
         });
+
+        function updateFavouritismScore(username) {
+            const scoreInput = document.getElementById(`favouritism-score-${username}`);
+            const score = parseInt(scoreInput.value);
+            socket.emit("update_favouritism_score", {username: username, score: score});
+        }
 
         socket.on("connect", () => {
             addLog("Connected to server.");

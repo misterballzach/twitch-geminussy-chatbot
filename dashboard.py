@@ -2,7 +2,7 @@ from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 import json
 from bot import generate_ai_response
-from database import get_db_connection
+from database import get_db_connection, set_favouritism_score
 
 CONFIG_FILE = "bot_config.json"
 
@@ -94,6 +94,14 @@ def create_dashboard_app(bot):
         users = conn.execute("SELECT * FROM users").fetchall()
         conn.close()
         emit("user_data", {user["username"]: dict(user) for user in users})
+
+    @socketio.on("update_favouritism_score")
+    def handle_update_favouritism_score(data):
+        username = data.get("username")
+        score = data.get("score")
+        if username is not None and score is not None:
+            set_favouritism_score(username, score)
+            handle_get_user_data() # Refresh the user data on the dashboard
 
     app.debug = True
     return app, socketio

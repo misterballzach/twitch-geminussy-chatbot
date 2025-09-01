@@ -55,6 +55,15 @@ def create_or_update_user(username, message_count_increment=0, is_subscriber=Non
     conn.commit()
     conn.close()
 
+def set_favouritism_score(username, score):
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET favouritism_score = ? WHERE username = ?",
+        (score, username)
+    )
+    conn.commit()
+    conn.close()
+
 if __name__ == "__main__":
     create_tables()
     print("Database tables created successfully.")
