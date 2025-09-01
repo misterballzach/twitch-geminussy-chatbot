@@ -73,6 +73,20 @@
             <button onclick="refreshUserData()">Refresh User Data</button>
         </div>
         <div class="form-group">
+            <h2>Delay Settings</h2>
+            <div id="delay-settings-container">
+                <div>
+                    <label for="base-delay">Base Delay (seconds):</label>
+                    <input type="number" id="base-delay" step="0.1">
+                </div>
+                <div>
+                    <label for="delay-per-character">Delay Per Character (seconds):</label>
+                    <input type="number" id="delay-per-character" step="0.01">
+                </div>
+                <button onclick="saveDelaySettings()">Save Delay Settings</button>
+            </div>
+        </div>
+        <div class="form-group">
             <h2>Moderation</h2>
             <div id="moderation-container">
                 <div>
@@ -112,6 +126,8 @@
         const likesInput = document.getElementById("likes");
         const dislikesInput = document.getElementById("dislikes");
         const userExplorerContainer = document.getElementById("user-explorer-container");
+        const baseDelayInput = document.getElementById("base-delay");
+        const delayPerCharacterInput = document.getElementById("delay-per-character");
 
         freqInput.addEventListener("input", () => {
             freqVal.innerText = freqInput.value;
@@ -159,6 +175,11 @@
             const personalityTraits = config.personality_traits || {};
             likesInput.value = (personalityTraits.likes || []).join(", ");
             dislikesInput.value = (personalityTraits.dislikes || []).join(", ");
+
+            // Populate delay settings
+            const delaySettings = config.delay_settings || {};
+            baseDelayInput.value = delaySettings.base_delay;
+            delayPerCharacterInput.value = delaySettings.delay_per_character;
 
             addLog("Config updated.");
         });
@@ -220,6 +241,14 @@
                 dislikes: dislikesInput.value.split(",").map(word => word.trim()).filter(word => word)
             };
             socket.emit("update_personality_traits", {personality_traits: personalityTraits});
+        }
+
+        function saveDelaySettings() {
+            const delaySettings = {
+                base_delay: parseFloat(baseDelayInput.value),
+                delay_per_character: parseFloat(delayPerCharacterInput.value)
+            };
+            socket.emit("update_delay_settings", {delay_settings: delaySettings});
         }
 
         function refreshUserData() {

@@ -29,11 +29,13 @@ def create_dashboard_app(bot):
             commands = json.dumps(list(bot.commands.keys()))
             moderation = json.dumps(config.get("moderation", {}))
             personality_traits = json.dumps(config.get("personality_traits", {}))
+            delay_settings = json.dumps(config.get("delay_settings", {}))
             print(f"Socials: {socials}")
             print(f"Commands: {commands}")
             print(f"Moderation: {moderation}")
             print(f"Personality Traits: {personality_traits}")
-            return render_template("dashboard.html", personality=config["personality"], auto_chat_freq=config["auto_chat_freq"], socials=socials, commands=commands, moderation=moderation, personality_traits=personality_traits)
+            print(f"Delay Settings: {delay_settings}")
+            return render_template("dashboard.html", personality=config["personality"], auto_chat_freq=config["auto_chat_freq"], socials=socials, commands=commands, moderation=moderation, personality_traits=personality_traits, delay_settings=delay_settings)
         except Exception as e:
             print(f"Error in index route: {e}")
             return "Internal Server Error", 500
@@ -87,6 +89,16 @@ def create_dashboard_app(bot):
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
         bot.config["personality_traits"] = config["personality_traits"]
+
+    @socketio.on("update_delay_settings")
+    def handle_update_delay_settings(data):
+        print(f"Updating delay settings with: {data}")
+        config = load_config()
+        config["delay_settings"] = data.get("delay_settings", config["delay_settings"])
+        save_config(config)
+        emit("config_updated", config, broadcast=True)
+        # Update the bot's config as well
+        bot.config["delay_settings"] = config["delay_settings"]
 
     @socketio.on("get_user_data")
     def handle_get_user_data():

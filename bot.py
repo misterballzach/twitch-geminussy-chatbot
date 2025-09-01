@@ -63,6 +63,12 @@ def load_or_create_config():
             "dislikes": []
         }
 
+    if "delay_settings" not in config:
+        config["delay_settings"] = {
+            "base_delay": 1.0,
+            "delay_per_character": 0.01
+        }
+
     if sys.stdin.isatty():
         channels_input = input("Enter Twitch channels (comma separated): ").strip()
         channels = [c.strip().lstrip("#") for c in channels_input.split(",") if c.strip()]
@@ -355,6 +361,11 @@ class IRCBot:
     def send_message(self, msg):
         if not msg:
             return
+
+        delay_settings = self.config.get("delay_settings", {"base_delay": 1.0, "delay_per_character": 0.01})
+        base_delay = delay_settings.get("base_delay", 1.0)
+        delay_per_character = delay_settings.get("delay_per_character", 0.01)
+
         # Split by paragraphs first for natural pauses
         paragraphs = msg.split("\n")
         for paragraph in paragraphs:
@@ -363,8 +374,9 @@ class IRCBot:
             for ch in self.channels:
                 for chunk in chunks:
                     try:
+                        delay = base_delay + (len(chunk) * delay_per_character)
+                        time.sleep(delay)
                         self.sock.send(f"PRIVMSG #{ch} :{chunk}\r\n".encode("utf-8"))
                         print(f"[BOT] Sent to #{ch}: {chunk}")
-                        time.sleep(5)  # 5-second delay between chunks
                     except Exception as e:
                         print(f"[ERROR] Sending message failed: {e}")
