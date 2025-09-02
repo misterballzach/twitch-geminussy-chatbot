@@ -73,6 +73,16 @@
             <button onclick="refreshUserData()">Refresh User Data</button>
         </div>
         <div class="form-group">
+            <h2>Response Settings</h2>
+            <div id="response-settings-container">
+                <div>
+                    <label for="max-response-length">Max Response Length (characters):</label>
+                    <input type="number" id="max-response-length">
+                </div>
+                <button onclick="saveResponseSettings()">Save Response Settings</button>
+            </div>
+        </div>
+        <div class="form-group">
             <h2>Delay Settings</h2>
             <div id="delay-settings-container">
                 <div>
@@ -128,6 +138,7 @@
         const userExplorerContainer = document.getElementById("user-explorer-container");
         const baseDelayInput = document.getElementById("base-delay");
         const delayPerCharacterInput = document.getElementById("delay-per-character");
+        const maxResponseLengthInput = document.getElementById("max-response-length");
 
         freqInput.addEventListener("input", () => {
             freqVal.innerText = freqInput.value;
@@ -180,6 +191,9 @@
             const delaySettings = config.delay_settings || {};
             baseDelayInput.value = delaySettings.base_delay;
             delayPerCharacterInput.value = delaySettings.delay_per_character;
+
+            // Populate response settings
+            maxResponseLengthInput.value = config.max_response_length;
 
             addLog("Config updated.");
         });
@@ -249,6 +263,13 @@
                 delay_per_character: parseFloat(delayPerCharacterInput.value)
             };
             socket.emit("update_delay_settings", {delay_settings: delaySettings});
+        }
+
+        function saveResponseSettings() {
+            const responseSettings = {
+                max_response_length: parseInt(maxResponseLengthInput.value)
+            };
+            socket.emit("update_response_settings", {response_settings: responseSettings});
         }
 
         function refreshUserData() {

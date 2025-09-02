@@ -30,12 +30,13 @@ def create_dashboard_app(bot):
             moderation = json.dumps(config.get("moderation", {}))
             personality_traits = json.dumps(config.get("personality_traits", {}))
             delay_settings = json.dumps(config.get("delay_settings", {}))
+            max_response_length = config.get("max_response_length", 450)
             print(f"Socials: {socials}")
             print(f"Commands: {commands}")
             print(f"Moderation: {moderation}")
             print(f"Personality Traits: {personality_traits}")
             print(f"Delay Settings: {delay_settings}")
-            return render_template("dashboard.html", personality=config["personality"], auto_chat_freq=config["auto_chat_freq"], socials=socials, commands=commands, moderation=moderation, personality_traits=personality_traits, delay_settings=delay_settings)
+            return render_template("dashboard.html", personality=config["personality"], auto_chat_freq=config["auto_chat_freq"], socials=socials, commands=commands, moderation=moderation, personality_traits=personality_traits, delay_settings=delay_settings, max_response_length=max_response_length)
         except Exception as e:
             print(f"Error in index route: {e}")
             return "Internal Server Error", 500
@@ -99,6 +100,16 @@ def create_dashboard_app(bot):
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
         bot.config["delay_settings"] = config["delay_settings"]
+
+    @socketio.on("update_response_settings")
+    def handle_update_response_settings(data):
+        print(f"Updating response settings with: {data}")
+        config = load_config()
+        config["max_response_length"] = data.get("response_settings", {}).get("max_response_length", 450)
+        save_config(config)
+        emit("config_updated", config, broadcast=True)
+        # Update the bot's config as well
+        bot.config["max_response_length"] = config["max_response_length"]
 
     @socketio.on("get_user_data")
     def handle_get_user_data():
