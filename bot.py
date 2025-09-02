@@ -69,6 +69,9 @@ def load_or_create_config():
             "delay_per_character": 0.01
         }
 
+    if "max_response_length" not in config:
+        config["max_response_length"] = 450
+
     if sys.stdin.isatty():
         channels_input = input("Enter Twitch channels (comma separated): ").strip()
         channels = [c.strip().lstrip("#") for c in channels_input.split(",") if c.strip()]
@@ -121,6 +124,11 @@ def generate_ai_response(prompt: str, user, config) -> str:
         if not text:
             print("[ERROR] Gemini response empty, full JSON:", resp)
             return "Hmm… I couldn't come up with a response!"
+
+        max_length = config.get("max_response_length", 450)
+        if len(text) > max_length:
+            text = text[:max_length] + "..."
+
         return text
     except Exception as e:
         print(f"[ERROR] Gemini API call failed: {e}, full response: {r.text if 'r' in locals() else 'no response'}")
