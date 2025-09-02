@@ -31,12 +31,14 @@ def create_dashboard_app(bot):
             personality_traits = json.dumps(config.get("personality_traits", {}))
             delay_settings = json.dumps(config.get("delay_settings", {}))
             max_response_length = config.get("max_response_length", 450)
+            conversation_starter = json.dumps(config.get("conversation_starter", {}))
             print(f"Socials: {socials}")
             print(f"Commands: {commands}")
             print(f"Moderation: {moderation}")
             print(f"Personality Traits: {personality_traits}")
             print(f"Delay Settings: {delay_settings}")
-            return render_template("dashboard.html", personality=config["personality"], auto_chat_freq=config["auto_chat_freq"], socials=socials, commands=commands, moderation=moderation, personality_traits=personality_traits, delay_settings=delay_settings, max_response_length=max_response_length)
+            print(f"Conversation Starter: {conversation_starter}")
+            return render_template("dashboard.html", personality=config["personality"], auto_chat_freq=config["auto_chat_freq"], socials=socials, commands=commands, moderation=moderation, personality_traits=personality_traits, delay_settings=delay_settings, max_response_length=max_response_length, conversation_starter=conversation_starter)
         except Exception as e:
             print(f"Error in index route: {e}")
             return "Internal Server Error", 500
@@ -125,6 +127,16 @@ def create_dashboard_app(bot):
         if username is not None and score is not None:
             set_favouritism_score(username, score)
             handle_get_user_data() # Refresh the user data on the dashboard
+
+    @socketio.on("update_conversation_starter_settings")
+    def handle_update_conversation_starter_settings(data):
+        print(f"Updating conversation starter settings with: {data}")
+        config = load_config()
+        config["conversation_starter"] = data.get("conversation_starter", config["conversation_starter"])
+        save_config(config)
+        emit("config_updated", config, broadcast=True)
+        # Update the bot's config as well
+        bot.config["conversation_starter"] = config["conversation_starter"]
 
     app.debug = True
     return app, socketio

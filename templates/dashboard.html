@@ -83,6 +83,20 @@
             </div>
         </div>
         <div class="form-group">
+            <h2>Conversation Starter</h2>
+            <div id="conversation-starter-container">
+                <div>
+                    <label for="conversation-starter">Enable Conversation Starter:</label>
+                    <input type="checkbox" id="conversation-starter">
+                </div>
+                <div>
+                    <label for="conversation-starter-interval">Interval (seconds):</label>
+                    <input type="number" id="conversation-starter-interval">
+                </div>
+                <button onclick="saveConversationStarterSettings()">Save Settings</button>
+            </div>
+        </div>
+        <div class="form-group">
             <h2>Delay Settings</h2>
             <div id="delay-settings-container">
                 <div>
@@ -139,6 +153,8 @@
         const baseDelayInput = document.getElementById("base-delay");
         const delayPerCharacterInput = document.getElementById("delay-per-character");
         const maxResponseLengthInput = document.getElementById("max-response-length");
+        const conversationStarterCheckbox = document.getElementById("conversation-starter");
+        const conversationStarterIntervalInput = document.getElementById("conversation-starter-interval");
 
         freqInput.addEventListener("input", () => {
             freqVal.innerText = freqInput.value;
@@ -194,6 +210,11 @@
 
             // Populate response settings
             maxResponseLengthInput.value = config.max_response_length;
+
+            // Populate conversation starter settings
+            const conversationStarter = config.conversation_starter || {};
+            conversationStarterCheckbox.checked = conversationStarter.enabled;
+            conversationStarterIntervalInput.value = conversationStarter.interval;
 
             addLog("Config updated.");
         });
@@ -306,6 +327,14 @@
             const scoreInput = document.getElementById(`favouritism-score-${username}`);
             const score = parseInt(scoreInput.value);
             socket.emit("update_favouritism_score", {username: username, score: score});
+        }
+
+        function saveConversationStarterSettings() {
+            const conversationStarter = {
+                enabled: conversationStarterCheckbox.checked,
+                interval: parseInt(conversationStarterIntervalInput.value)
+            };
+            socket.emit("update_conversation_starter_settings", {conversation_starter: conversationStarter});
         }
 
         socket.on("connect", () => {

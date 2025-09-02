@@ -1,5 +1,5 @@
 import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap, traceback
-from database import create_tables, create_or_update_user, get_user
+from database import create_tables, create_or_update_user, get_user, get_random_active_user
 
 # ---------------- CONFIG ----------------
 CONFIG_FILE = "bot_config.json"
@@ -71,6 +71,9 @@ def load_or_create_config():
 
     if "max_response_length" not in config:
         config["max_response_length"] = 450
+
+    if "conversation_starter_interval" not in config:
+        config["conversation_starter_interval"] = 900
 
     if sys.stdin.isatty():
         channels_input = input("Enter Twitch channels (comma separated): ").strip()
@@ -194,6 +197,8 @@ class IRCBot:
         threading.Thread(target=self.connect_and_listen, daemon=True).start()
         self.auto_chat_timer = threading.Timer(self.config.get("auto_chat_interval", 600), self.auto_chat)
         self.auto_chat_timer.start()
+        self.conversation_starter_timer = threading.Timer(self.config.get("conversation_starter_interval", 900), self.conversation_starter_task)
+        self.conversation_starter_timer.start()
 
     def connect_and_listen(self):
         while True:
@@ -315,6 +320,17 @@ class IRCBot:
     def commands_command(self, args, user, channel):
         commands_list = "!".join(self.commands.keys())
         self.send_message(f"Available commands: !{commands_list}")
+
+    def conversation_starter_task(self):
+        user_to_start_conversation_with = get_random_active_user()
+        if user_to_start_conversation_with:
+            username = user_to_start_conversation_with["username"]
+            prompt = f"You want to start a conversation with the user '{username}'. Their favouritism score is {user_to_start_conversation_with['favouritism_score']}. Based on this, what would be a good way to start a conversation with them? Keep it short and natural."
+            response = generate_ai_response(prompt, username, self.config)
+            self.send_message(f"@{username}, {response}")
+
+        self.conversation_starter_timer = threading.Timer(self.config.get("conversation_starter_interval", 900), self.conversation_starter_task)
+        self.conversation_starter_timer.start()
 
     def auto_chat(self):
         if random.random() < self.config.get("auto_chat_freq", 0.2):
