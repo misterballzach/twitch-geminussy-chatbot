@@ -67,7 +67,7 @@ def create_dashboard_app(bot):
     def handle_update_socials(data):
         print(f"Updating socials with: {data}")
         config = load_config()
-        config["socials"] = data.get("socials", config["socials"])
+        config["socials"] = data.get("socials", config.get("socials", {}))
         save_config(config)
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
@@ -77,7 +77,7 @@ def create_dashboard_app(bot):
     def handle_update_moderation(data):
         print(f"Updating moderation with: {data}")
         config = load_config()
-        config["moderation"] = data.get("moderation", config["moderation"])
+        config["moderation"] = data.get("moderation", config.get("moderation", {}))
         save_config(config)
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
@@ -87,7 +87,7 @@ def create_dashboard_app(bot):
     def handle_update_personality_traits(data):
         print(f"Updating personality traits with: {data}")
         config = load_config()
-        config["personality_traits"] = data.get("personality_traits", config["personality_traits"])
+        config["personality_traits"] = data.get("personality_traits", config.get("personality_traits", {}))
         save_config(config)
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
@@ -97,7 +97,7 @@ def create_dashboard_app(bot):
     def handle_update_delay_settings(data):
         print(f"Updating delay settings with: {data}")
         config = load_config()
-        config["delay_settings"] = data.get("delay_settings", config["delay_settings"])
+        config["delay_settings"] = data.get("delay_settings", config.get("delay_settings", {}))
         save_config(config)
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
@@ -132,7 +132,7 @@ def create_dashboard_app(bot):
     def handle_update_conversation_starter_settings(data):
         print(f"Updating conversation starter settings with: {data}")
         config = load_config()
-        config["conversation_starter"] = data.get("conversation_starter", config["conversation_starter"])
+        config["conversation_starter"] = data.get("conversation_starter", config.get("conversation_starter", {}))
         save_config(config)
         emit("config_updated", config, broadcast=True)
         # Update the bot's config as well
