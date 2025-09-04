@@ -129,7 +129,7 @@ def generate_ai_response(prompt: str, user, config) -> str:
             return "Hmm… I couldn't come up with a response!"
 
         max_length = config.get("max_response_length", 450)
-        if len(text) > max_length:
+        if max_length is not None and len(text) > max_length:
             text = text[:max_length] + "..."
 
         return text
