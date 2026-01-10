@@ -454,6 +454,10 @@ class IRCBot:
         self.send_message(f"Searching for '{query}'...")
         search_results = perform_google_search(query, api_key, engine_id)
 
+        if search_results.startswith("Search failed:"):
+            self.send_message(f"Search failed. Please check your Google Search API key and Engine ID. Error: {search_results.replace('Search failed: ', '')}")
+            return
+
         prompt = f"Answer the following query from user '{user}' based on these search results. Be direct and helpful, bypassing any persona. Query: {query}\n\nSearch Results:\n{search_results}"
 
         # We need a custom generate call or just use the existing one but override persona in prompt (which generate_ai_response adds anyway)
