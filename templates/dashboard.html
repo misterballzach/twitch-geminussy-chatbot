@@ -304,29 +304,48 @@
                 <tr>
                     <th>Username</th>
                     <th>Message Count</th>
-                    <th>Is Subscriber</th>
-                    <th>Favouritism Score</th>
-                    <th></th>
+                    <th>Sub</th>
+                    <th>Score</th>
+                    <th>Facts (comma-separated)</th>
+                    <th>Actions</th>
                 </tr>
             `;
             for (const [username, user_data] of Object.entries(data)) {
+                // Parse facts if they are stored as JSON string, or default to empty list
+                let userFacts = [];
+                try {
+                    if (user_data.facts) {
+                        userFacts = JSON.parse(user_data.facts);
+                    }
+                } catch(e) { console.error("Error parsing facts", e); }
+                const factsString = userFacts.join(", ");
+
                 const row = document.createElement("tr");
                 row.innerHTML = `
                     <td>${username}</td>
                     <td>${user_data.message_count}</td>
                     <td>${user_data.is_subscriber ? 'Yes' : 'No'}</td>
-                    <td><input type="number" value="${user_data.favouritism_score}" id="favouritism-score-${username}"></td>
-                    <td><button onclick="updateFavouritismScore('${username}')">Save</button></td>
+                    <td><input type="number" value="${user_data.favouritism_score}" id="favouritism-score-${username}" style="width: 50px;"></td>
+                    <td><textarea id="facts-${username}" style="width: 100%; height: 50px;">${factsString}</textarea></td>
+                    <td>
+                        <button onclick="updateUserData('${username}')">Save</button>
+                    </td>
                 `;
                 table.appendChild(row);
             }
             userExplorerContainer.appendChild(table);
         });
 
-        function updateFavouritismScore(username) {
+        function updateUserData(username) {
+            // Update Score
             const scoreInput = document.getElementById(`favouritism-score-${username}`);
             const score = parseInt(scoreInput.value);
             socket.emit("update_favouritism_score", {username: username, score: score});
+
+            // Update Facts
+            const factsInput = document.getElementById(`facts-${username}`);
+            const factsList = factsInput.value.split(",").map(f => f.trim()).filter(f => f);
+            socket.emit("update_user_facts", {username: username, facts: factsList});
         }
 
         function saveConversationStarterSettings() {
