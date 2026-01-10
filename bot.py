@@ -1,5 +1,5 @@
 import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap, traceback
-from database import create_tables, create_or_update_user, get_user, get_random_active_user
+from database import create_tables, create_or_update_user, get_user, get_random_active_user, update_user_facts
 
 # ---------------- CONFIG ----------------
 CONFIG_FILE = "bot_config.json"
@@ -7,7 +7,9 @@ MEMORY = {"chat_history": []}
 
 def prompt_missing_config(config):
     required = ["bot_username", "bot_token", "gemini_api_key", "personality", "auto_chat_freq"]
+    optional = ["google_search_api_key", "google_search_engine_id", "caption_file_path"]
     updated = False
+
     for field in required:
         if field not in config or config[field] in [None, ""]:
             if field == "personality":
@@ -24,6 +26,20 @@ def prompt_missing_config(config):
                     val = val.strip('\'" ,')
             config[field] = val
             updated = True
+
+    for field in optional:
+        if field not in config:
+            val = input(f"Enter {field.replace('_',' ')} (optional, press Enter to skip): ").strip()
+            if val:
+                if field == "caption_file_path":
+                    # Remove quotes if user added them
+                    val = val.strip('\'"')
+                config[field] = val
+                updated = True
+            else:
+                config[field] = ""
+                updated = True
+
     if updated:
         with open(CONFIG_FILE, "w") as f: json.dump(config, f, indent=4)
     return config
@@ -87,6 +103,102 @@ def load_or_create_config():
 
     return config
 
+# ---------------- CONTEXT MONITOR ----------------
+class ContextMonitor:
+    def __init__(self, file_path, max_lines=20):
+        self.file_path = file_path
+        self.max_lines = max_lines
+        self.context_buffer = []
+        self.last_modified = 0
+        if file_path:
+            threading.Thread(target=self.monitor_file, daemon=True).start()
+
+    def monitor_file(self):
+        while True:
+            try:
+                if os.path.exists(self.file_path):
+                    mtime = os.path.getmtime(self.file_path)
+                    if mtime > self.last_modified:
+                        self.last_modified = mtime
+                        with open(self.file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            lines = f.readlines()
+                            # Just take the last N lines
+                            self.context_buffer = [line.strip() for line in lines[-self.max_lines:] if line.strip()]
+            except Exception as e:
+                print(f"[ERROR] Context monitor failed: {e}")
+            time.sleep(1)
+
+    def get_context(self):
+        return "\n".join(self.context_buffer)
+
+# ---------------- SEARCH ----------------
+def perform_google_search(query, api_key, engine_id):
+    if not api_key or not engine_id:
+        return "Search configuration missing."
+
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        "q": query,
+        "key": api_key,
+        "cx": engine_id,
+        "num": 3
+    }
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        results = []
+        for item in data.get("items", []):
+            title = item.get("title", "No title")
+            snippet = item.get("snippet", "No snippet")
+            link = item.get("link", "")
+            results.append(f"Title: {title}\nSnippet: {snippet}\nLink: {link}")
+
+        return "\n\n".join(results)
+    except Exception as e:
+        print(f"[ERROR] Search failed: {e}")
+        return f"Search failed: {e}"
+
+def extract_user_facts(message, user, config):
+    prompt = f"Analyze the following message from user '{user}'. Identify if there are any permanent or semi-permanent facts about the user (e.g., location, profession, age, pets, hobbies, hardware specs, recurring problems). Ignore transient states or opinions. Return a JSON object with a key 'facts' containing a list of strings, or an empty list if no facts are found. ONLY return the JSON object, no other text. Message: {message}"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents":[{"parts":[{"text": prompt}]}]}
+
+    try:
+        r = requests.post(url, headers=headers, json=data, timeout=10)
+        r.raise_for_status()
+        resp = r.json()
+
+        text_parts = []
+        if "candidates" in resp:
+            content = resp["candidates"][0].get("content", {})
+            parts = content.get("parts", [])
+            for part in parts:
+                if "text" in part:
+                    text_parts.append(part["text"])
+
+        response_text = " ".join(text_parts).strip()
+
+        # Strip markdown code blocks if present
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]
+        if response_text.startswith("```"):
+            response_text = response_text[3:]
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]
+
+        response_json = json.loads(response_text.strip())
+        facts = response_json.get("facts", [])
+        if facts:
+            update_user_facts(user, facts)
+            print(f"[FACTS] Updated facts for {user}: {facts}")
+    except Exception as e:
+        # It's expected that many messages won't have facts or won't parse correctly, so just log debug
+        print(f"[DEBUG] Fact extraction failed or no facts: {e}")
+
 # ---------------- GEMINI AI ----------------
 def generate_ai_response(prompt: str, user, config) -> str:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
@@ -97,6 +209,25 @@ def generate_ai_response(prompt: str, user, config) -> str:
     user_data = get_user(user)
     favouritism_score = user_data["favouritism_score"] if user_data else 0
 
+    # Get user facts
+    user_facts = []
+    if user_data and user_data["facts"]:
+        try:
+            user_facts = json.loads(user_data["facts"])
+        except:
+            pass
+
+    facts_str = ""
+    if user_facts:
+        facts_str = f"\nKnown facts about {user}: {', '.join(user_facts)}"
+
+    # Get spoken context from monitor
+    spoken_context = ""
+    if 'context_monitor' in globals() and context_monitor:
+         spoken_context = f"\nRecent spoken context:\n{context_monitor.get_context()}\n"
+    elif 'bot_instance' in globals() and bot_instance and bot_instance.context_monitor:
+         spoken_context = f"\nRecent spoken context:\n{bot_instance.context_monitor.get_context()}\n"
+
     personality_prompt = f"Respond in personality: {config['personality']}"
     if "personality_traits" in config:
         likes = ", ".join(config["personality_traits"].get("likes", []))
@@ -106,7 +237,7 @@ def generate_ai_response(prompt: str, user, config) -> str:
         if dislikes:
             personality_prompt += f"\nDislikes: {dislikes}"
 
-    prompt_with_context = f"{personality_prompt}\nUser '{user}' has a favouritism score of {favouritism_score}.\n{prompt}"
+    prompt_with_context = f"{personality_prompt}{spoken_context}\nUser '{user}' has a favouritism score of {favouritism_score}.{facts_str}\n{prompt}"
     data = {"contents":[{"parts":[{"text": prompt_with_context}]}]}
 
     try:
@@ -188,11 +319,18 @@ class IRCBot:
         self.sock_lock = threading.Lock()
         self.commands = {
             "ai": self.ai_command,
+            "gemini": self.gemini_command,
             "say": self.say_command,
             "uptime": self.uptime_command,
             "socials": self.socials_command,
             "commands": self.commands_command
         }
+        self.context_monitor = ContextMonitor(self.config.get("caption_file_path"))
+
+        # Expose bot instance globally for the generate_ai_response function to access context monitor
+        global bot_instance
+        bot_instance = self
+
         create_tables()
         threading.Thread(target=self.connect_and_listen, daemon=True).start()
         self.auto_chat_timer = threading.Timer(self.config.get("auto_chat_interval", 600), self.auto_chat)
@@ -259,6 +397,9 @@ class IRCBot:
                     args = command_parts[1] if len(command_parts) > 1 else ""
                     self.handle_command(command, args, user, channel)
                 elif self.nick.lower() in message.lower():
+                    # Try to extract facts from the message
+                    threading.Thread(target=extract_user_facts, args=(message, user, self.config)).start()
+
                     prompt = message
                     context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
                     resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config)
@@ -296,6 +437,55 @@ class IRCBot:
         resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config)
         save_memory(user, prompt, resp)
         self.send_message(resp)
+
+    def gemini_command(self, args, user, channel):
+        query = args
+        if not query:
+            self.send_message("Please provide a query for Gemini.")
+            return
+
+        api_key = self.config.get("google_search_api_key")
+        engine_id = self.config.get("google_search_engine_id")
+
+        if not api_key or not engine_id:
+            self.send_message("Google Search is not configured.")
+            return
+
+        self.send_message(f"Searching for '{query}'...")
+        search_results = perform_google_search(query, api_key, engine_id)
+
+        prompt = f"Answer the following query from user '{user}' based on these search results. Be direct and helpful, bypassing any persona. Query: {query}\n\nSearch Results:\n{search_results}"
+
+        # We need a custom generate call or just use the existing one but override persona in prompt (which generate_ai_response adds anyway)
+        # To strictly bypass persona, we might need to modify generate_ai_response or make a new one.
+        # For now, let's try to instruct it to ignore previous instructions.
+
+        # But wait, generate_ai_response prepends the persona.
+        # Let's just create a raw request here to ensure persona bypass.
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.config['gemini_api_key']}"
+        headers = {"Content-Type": "application/json"}
+        data = {"contents":[{"parts":[{"text": prompt}]}]}
+
+        try:
+            r = requests.post(url, headers=headers, json=data, timeout=10)
+            r.raise_for_status()
+            resp = r.json()
+            text_parts = []
+            if "candidates" in resp:
+                for part in resp["candidates"][0]["content"]["parts"]:
+                    if "text" in part: text_parts.append(part["text"])
+            response_text = " ".join(text_parts).strip()
+
+            # Truncate if too long
+            if len(response_text) > 450:
+                 response_text = response_text[:447] + "..."
+
+            self.send_message(f"@{user} {response_text}")
+
+        except Exception as e:
+            print(f"[ERROR] Gemini command failed: {e}")
+            self.send_message("Sorry, I couldn't process that request.")
 
     def say_command(self, args, user, channel):
         self.send_message(args)

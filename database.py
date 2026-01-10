@@ -1,5 +1,6 @@
 import sqlite3
 import datetime
+import json
 
 DB_FILE = "bot_memory.db"
 
@@ -30,6 +31,8 @@ def migrate_tables():
         cursor.execute("ALTER TABLE users ADD COLUMN favouritism_score INTEGER NOT NULL DEFAULT 0")
     if "last_seen" not in columns:
         cursor.execute("ALTER TABLE users ADD COLUMN last_seen TIMESTAMP")
+    if "facts" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN facts TEXT")
     conn.commit()
     conn.close()
 
@@ -45,8 +48,8 @@ def create_or_update_user(username, message_count_increment=0, is_subscriber=Non
     now = datetime.datetime.now()
     if user is None:
         conn.execute(
-            "INSERT INTO users (username, message_count, is_subscriber, favouritism_score, last_seen) VALUES (?, ?, ?, ?, ?)",
-            (username, message_count_increment, 1 if is_subscriber else 0, favouritism_score_increment, now)
+            "INSERT INTO users (username, message_count, is_subscriber, favouritism_score, last_seen, facts) VALUES (?, ?, ?, ?, ?, ?)",
+            (username, message_count_increment, 1 if is_subscriber else 0, favouritism_score_increment, now, json.dumps([]))
         )
     else:
         new_message_count = user["message_count"] + message_count_increment
@@ -57,6 +60,21 @@ def create_or_update_user(username, message_count_increment=0, is_subscriber=Non
             (new_message_count, 1 if new_is_subscriber else 0, new_favouritism_score, now, username)
         )
     conn.commit()
+    conn.close()
+
+def update_user_facts(username, new_facts):
+    conn = get_db_connection()
+    user = get_user(username)
+    if user:
+        current_facts = json.loads(user["facts"]) if user["facts"] else []
+        current_facts.extend(new_facts)
+        # Unique facts only
+        current_facts = list(set(current_facts))
+        conn.execute(
+            "UPDATE users SET facts = ? WHERE username = ?",
+            (json.dumps(current_facts), username)
+        )
+        conn.commit()
     conn.close()
 
 def set_favouritism_score(username, score):
