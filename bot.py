@@ -34,6 +34,9 @@ def prompt_missing_config(config):
                 if field == "caption_file_path":
                     # Remove quotes if user added them
                     val = val.strip('\'"')
+                else:
+                    # Strip quotes and extra spaces for keys/ids
+                    val = val.strip('\'" ')
                 config[field] = val
                 updated = True
             else:
