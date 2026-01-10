@@ -50,6 +50,17 @@ def prompt_missing_config(config):
 def load_or_create_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f: config = json.load(f)
+
+        # Sanitize keys
+        for key in ["google_search_api_key", "google_search_engine_id", "gemini_api_key"]:
+            if key in config and isinstance(config[key], str):
+                config[key] = config[key].strip('\'" \n')
+
+        # Check for username as API key
+        if "google_search_api_key" in config and "bot_username" in config:
+            if config["google_search_api_key"] == config["bot_username"]:
+                print(f"[WARNING] Your Google Search API Key is set to '{config['google_search_api_key']}', which matches your bot username. This is likely incorrect.")
+
         if sys.stdin.isatty():
             config = prompt_missing_config(config)
     else:
@@ -159,6 +170,22 @@ def perform_google_search(query, api_key, engine_id):
             results.append(f"Title: {title}\nSnippet: {snippet}\nLink: {link}")
 
         return "\n\n".join(results)
+    except requests.exceptions.HTTPError as e:
+        error_msg = f"Search failed: {e}"
+        try:
+            # Try to parse the JSON error response
+            if e.response is not None:
+                error_data = e.response.json()
+                if "error" in error_data and "message" in error_data["error"]:
+                    error_msg = f"Search failed: {error_data['error']['message']}"
+        except:
+            pass
+
+        # Log the full error with masked key for debugging
+        masked_key = api_key[:4] + "..." + api_key[-4:] if len(api_key) > 8 else "..."
+        print(f"[ERROR] Google Search failed. URL: {url}?q={query}&key={masked_key}&cx={engine_id}&num=3")
+        print(f"[ERROR] Response: {e.response.text if e.response is not None else 'No response'}")
+        return error_msg
     except Exception as e:
         print(f"[ERROR] Search failed: {e}")
         return f"Search failed: {e}"
