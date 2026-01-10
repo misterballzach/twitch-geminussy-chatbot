@@ -12,6 +12,12 @@ Auto-chat with configurable frequency.
 
 Maintains recent chat history for context-aware responses.
 
+**Contextual Hearing:** Monitors a local caption file to understand spoken context from the streamer.
+
+**Web Search:** Can perform Google searches to answer questions directly (!gemini command).
+
+**Long-term Memory:** Learns and remembers facts about users (hobbies, location, etc.) over time.
+
 Web dashboard to adjust personality and auto-chat frequency in real-time.
 
 Logs all chat messages and bot responses in the console.
@@ -26,6 +32,10 @@ A Twitch OAuth token (from Twitch Token Generator
 )
 
 Google Gemini API key
+
+(Optional) Google Custom Search API Key & Engine ID (for !gemini command)
+
+(Optional) Path to a live caption/transcript text file (for contextual hearing)
 
 Installation
 
@@ -59,6 +69,10 @@ Auto-chat frequency (0–1)
 
 Twitch channels to join (comma-separated)
 
+(Optional) Google Search API Key & Engine ID
+
+(Optional) Caption file path
+
 Open the dashboard:
 
 http://localhost:5000
@@ -71,6 +85,8 @@ Commands
 !say <message> – Bot rewrites the message in its personality and sends it to chat.
 
 !ai <message> – Bot generates a Gemini AI response with memory context.
+
+!gemini <query> – Bot searches the web and answers the query directly (bypassing personality).
 
 Notes
 
@@ -88,7 +104,10 @@ Example Config (bot_config.json)
     "personality": "silly, goofy, old grandma",
     "auto_chat_freq": 0.5,
     "refresh_token": "your_refresh_token",
-    "channels": ["mrballzach"]
+    "channels": ["mrballzach"],
+    "google_search_api_key": "AIzaSyYYYYYY",
+    "google_search_engine_id": "0123456789",
+    "caption_file_path": "C:/Stream/captions.txt"
 }
 
 License
