@@ -77,6 +77,15 @@ def update_user_facts(username, new_facts):
         conn.commit()
     conn.close()
 
+def set_user_facts(username, facts):
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET facts = ? WHERE username = ?",
+        (json.dumps(facts), username)
+    )
+    conn.commit()
+    conn.close()
+
 def set_favouritism_score(username, score):
     conn = get_db_connection()
     conn.execute(
