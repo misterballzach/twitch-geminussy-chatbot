@@ -163,7 +163,7 @@ def perform_google_search(query, api_key, engine_id):
 def extract_user_facts(message, user, config):
     prompt = f"Analyze the following message from user '{user}'. Identify if there are any permanent or semi-permanent facts about the user (e.g., location, profession, age, pets, hobbies, hardware specs, recurring problems). Ignore transient states or opinions. Return a JSON object with a key 'facts' containing a list of strings, or an empty list if no facts are found. ONLY return the JSON object, no other text. Message: {message}"
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={config['gemini_api_key']}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
     headers = {"Content-Type": "application/json"}
     data = {"contents":[{"parts":[{"text": prompt}]}]}
 
@@ -201,7 +201,7 @@ def extract_user_facts(message, user, config):
 
 # ---------------- GEMINI AI ----------------
 def generate_ai_response(prompt: str, user, config) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={config['gemini_api_key']}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
     headers = {
         "Content-Type": "application/json",
     }
@@ -463,7 +463,7 @@ class IRCBot:
         # But wait, generate_ai_response prepends the persona.
         # Let's just create a raw request here to ensure persona bypass.
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.config['gemini_api_key']}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.config['gemini_api_key']}"
         headers = {"Content-Type": "application/json"}
         data = {"contents":[{"parts":[{"text": prompt}]}]}
 
