@@ -1,8 +1,45 @@
 import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap, traceback
+import websocket
 from database import create_tables, create_or_update_user, get_user, get_random_active_user, update_user_facts
 from ai_client import generate_ai_response, perform_google_search, extract_user_facts
 from games import GameManager
 import hashlib
+
+# ---------------- HELPERS ----------------
+def validate_token(token):
+    try:
+        url = "https://id.twitch.tv/oauth2/validate"
+        headers = {"Authorization": f"OAuth {token.replace('oauth:', '')}"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        client_id = data.get("client_id")
+        user_id = data.get("user_id")
+        scopes = data.get("scopes", [])
+
+        if "channel:read:ads" not in scopes:
+            print("[WARNING] Token missing 'channel:read:ads' scope. Auto-ad detection will not work.")
+
+        return client_id, user_id, scopes
+    except Exception as e:
+        print(f"[ERROR] Token validation failed: {e}")
+        return None, None, []
+
+def get_broadcaster_id(username, client_id, token):
+    try:
+        url = f"https://api.twitch.tv/helix/users?login={username}"
+        headers = {
+            "Client-ID": client_id,
+            "Authorization": f"Bearer {token.replace('oauth:', '')}"
+        }
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data["data"]:
+            return data["data"][0]["id"]
+    except Exception as e:
+        print(f"[ERROR] Failed to resolve broadcaster ID for {username}: {e}")
+    return None
 
 # ---------------- CONFIG ----------------
 CONFIG_FILE = "bot_config.json"
@@ -148,6 +185,117 @@ class ContextMonitor:
     def get_context(self):
         return "\n".join(self.context_buffer)
 
+# ---------------- EVENTSUB CLIENT ----------------
+class TwitchEventSub:
+    def __init__(self, config, on_ad_break_callback):
+        self.config = config
+        self.on_ad_break = on_ad_break_callback
+        self.ws = None
+        self.session_id = None
+        self.client_id = None
+        self.token = self.config["bot_token"]
+        self.broadcaster_ids = {}
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        # 1. Validate token and get Client ID
+        self.client_id, user_id, scopes = validate_token(self.token)
+        if not self.client_id:
+            print("[EVENTSUB] Failed to get Client ID. EventSub disabled.")
+            return
+
+        # 2. Resolve Broadcaster IDs
+        for ch in self.config["channels"]:
+            bid = get_broadcaster_id(ch, self.client_id, self.token)
+            if bid:
+                self.broadcaster_ids[ch] = bid
+            else:
+                print(f"[EVENTSUB] Could not find ID for channel {ch}")
+
+        if not self.broadcaster_ids:
+            print("[EVENTSUB] No valid channels to monitor.")
+            return
+
+        # 3. Connect to WebSocket
+        websocket.enableTrace(False)
+        self.ws = websocket.WebSocketApp("wss://eventsub.wss.twitch.tv/ws",
+                                         on_open=self._on_open,
+                                         on_message=self._on_message,
+                                         on_error=self._on_error,
+                                         on_close=self._on_close)
+        self.ws.run_forever()
+
+    def _on_open(self, ws):
+        print("[EVENTSUB] Connected to Twitch EventSub.")
+
+    def _on_message(self, ws, message):
+        try:
+            data = json.loads(message)
+            msg_type = data.get("metadata", {}).get("message_type")
+
+            if msg_type == "session_welcome":
+                self.session_id = data.get("payload", {}).get("session", {}).get("id")
+                print(f"[EVENTSUB] Session Welcome. ID: {self.session_id}")
+                self._subscribe_to_ads()
+
+            elif msg_type == "notification":
+                payload = data.get("payload", {})
+                subscription = payload.get("subscription", {})
+                event = payload.get("event", {})
+
+                if subscription.get("type") == "channel.ad_break.begin":
+                    duration = event.get("duration_seconds", 0)
+                    broadcaster_id = event.get("broadcaster_user_id")
+                    # Find channel name from ID
+                    channel = next((name for name, bid in self.broadcaster_ids.items() if bid == broadcaster_id), None)
+                    if channel:
+                        print(f"[EVENTSUB] Ad break detected on {channel} for {duration}s")
+                        self.on_ad_break(channel, duration)
+
+        except Exception as e:
+            print(f"[EVENTSUB] Error parsing message: {e}")
+
+    def _subscribe_to_ads(self):
+        if not self.session_id: return
+
+        url = "https://api.twitch.tv/helix/eventsub/subscriptions"
+        headers = {
+            "Client-ID": self.client_id,
+            "Authorization": f"Bearer {self.token.replace('oauth:', '')}",
+            "Content-Type": "application/json"
+        }
+
+        for ch, bid in self.broadcaster_ids.items():
+            payload = {
+                "type": "channel.ad_break.begin",
+                "version": "1",
+                "condition": {"broadcaster_user_id": bid},
+                "transport": {
+                    "method": "websocket",
+                    "session_id": self.session_id
+                }
+            }
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=10)
+                if resp.status_code in [200, 202]:
+                    print(f"[EVENTSUB] Subscribed to ads for {ch}")
+                elif resp.status_code == 409:
+                    print(f"[EVENTSUB] Already subscribed for {ch}")
+                else:
+                    print(f"[EVENTSUB] Subscription failed for {ch}: {resp.text}")
+            except Exception as e:
+                print(f"[EVENTSUB] Sub req failed: {e}")
+
+    def _on_error(self, ws, error):
+        print(f"[EVENTSUB] Error: {error}")
+
+    def _on_close(self, ws, close_status_code, close_msg):
+        print("[EVENTSUB] Disconnected. Reconnecting in 10s...")
+        time.sleep(10)
+        self.start() # Simple reconnect
+
 # ---------------- SEARCH & AI & FACTS (Moved to ai_client.py) ----------------
 
 def analyze_sentiment_and_update_preferences(message, user, config):
@@ -231,6 +379,7 @@ class IRCBot:
         self.context_monitor = ContextMonitor(self.config.get("caption_file_path"))
         self.game_manager = GameManager(self.config, self.send_message)
         self.is_brb = False
+        self.is_ad_break = False
         self.original_auto_chat_freq = self.config.get("auto_chat_freq", 0.2)
         self.brb_timer = None
 
@@ -239,6 +388,11 @@ class IRCBot:
         bot_instance = self
 
         create_tables()
+
+        # Start EventSub
+        self.eventsub = TwitchEventSub(self.config, self.start_ad_mode)
+        self.eventsub.start()
+
         threading.Thread(target=self.connect_and_listen, daemon=True).start()
         self.auto_chat_timer = threading.Timer(self.config.get("auto_chat_interval", 600), self.auto_chat)
         self.auto_chat_timer.start()
@@ -505,27 +659,61 @@ class IRCBot:
             self.send_message(response)
         threading.Thread(target=_raidmsg_task).start()
 
-    def send_brb_summary(self, channel, user):
+    def send_brb_summary(self, channel, user, context_type="brb"):
         try:
             history = get_recent_memory(30)
             history_str = ""
             for entry in history:
                 history_str += f"{entry['user']}: {entry['message']}\n"
 
-            prompt = f"The streamer is stepping away (BRB). Please summarize the recent conversation (last 20-30 messages) and spoken context for the chat. Keep it brief and fun. Here is the recent chat history:\n\n{history_str}"
+            if context_type == "ad":
+                prompt = f"An ad break has just started. Please summarize the recent conversation (last 20-30 messages) for viewers who might not be subscribed, so they have something to read while the ad plays. Keep it entertaining! Chat History:\n\n{history_str}"
+            else:
+                prompt = f"The streamer is stepping away (BRB). Please summarize the recent conversation (last 20-30 messages) and spoken context for the chat. Keep it brief and fun. Here is the recent chat history:\n\n{history_str}"
 
             # generate_ai_response will handle appending the spoken context from context_monitor
             response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
 
-            # Check if still in BRB mode before sending
-            if self.is_brb:
+            # Check if still in correct mode before sending
+            if (context_type == "brb" and self.is_brb) or (context_type == "ad" and self.is_ad_break):
                 self.send_message(response)
         except Exception as e:
-            print(f"[ERROR] Failed to generate BRB summary: {e}")
+            print(f"[ERROR] Failed to generate summary: {e}")
         finally:
-            # Always try to start game loop if still in BRB mode, even if summary failed
-            if self.is_brb:
+            # Trigger appropriate game loop
+            if context_type == "brb" and self.is_brb:
                 self.brb_game_loop(channel)
+            elif context_type == "ad" and self.is_ad_break:
+                self.ad_game_loop(channel)
+
+    def start_ad_mode(self, channel, duration):
+        if self.is_ad_break: return # Already running
+        self.is_ad_break = True
+        print(f"[BOT] Starting Ad Mode for {duration}s")
+
+        self.send_message(f"📺 Ad break started! For those stuck in ads, here's a quick summary of what's happening and a game! (Sub to skip ads!)")
+
+        # Start summary and games
+        threading.Thread(target=self.send_brb_summary, args=(channel, "System", "ad")).start()
+
+        # Schedule end of ad mode
+        threading.Timer(duration, self.end_ad_mode).start()
+
+    def end_ad_mode(self):
+        self.is_ad_break = False
+        print("[BOT] Ad Mode ended.")
+
+    def ad_game_loop(self, channel):
+        if not self.is_ad_break: return
+
+        msg = self.game_manager.start_random_game(channel)
+        if msg:
+            self.send_message(msg)
+
+        # Schedule next game quickly (every 60s) during ads if ad is long?
+        # Typically ads are 30-180s. One game might be enough.
+        # But let's check recursively if ad is still running
+        threading.Timer(60, self.ad_game_loop, [channel]).start()
 
     def brb_command(self, args, user, channel):
         # Check if user is broadcaster or mod?
