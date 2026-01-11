@@ -469,6 +469,18 @@ class IRCBot:
 
         self.send_message(f"❤️ Love User Compatibility: {user} + {target} = {score}%! {msg}")
 
+    def send_brb_summary(self, channel, user):
+        history = get_recent_memory(30)
+        history_str = ""
+        for entry in history:
+            history_str += f"{entry['user']}: {entry['message']}\n"
+
+        prompt = f"The streamer is stepping away (BRB). Please summarize the recent conversation (last 20-30 messages) and spoken context for the chat. Keep it brief and fun. Here is the recent chat history:\n\n{history_str}"
+
+        # generate_ai_response will handle appending the spoken context from context_monitor
+        response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
+        self.send_message(response)
+
     def brb_command(self, args, user, channel):
         # Check if user is broadcaster or mod?
         # For simplicity, assuming any user can trigger this locally, or ideally restrict to broadcaster
@@ -483,6 +495,9 @@ class IRCBot:
         self.config["auto_chat_freq"] = 0.8
 
         self.send_message("Streamer is stepping away! 🏃‍♂️💨 Entertainment protocols engaged! Expect games and chaos!")
+
+        # Send summary in background
+        threading.Thread(target=self.send_brb_summary, args=(channel, user)).start()
 
         # Start game loop
         self.brb_game_loop(channel)
