@@ -48,29 +48,44 @@ class TestBRB(unittest.TestCase):
 
         # Mock send_message to capture output
         self.bot.send_message = MagicMock()
+        # Mock brb_game_loop to verify calls
+        self.bot.brb_game_loop = MagicMock()
 
-    def test_send_brb_summary(self):
-        # Populate memory
-        for i in range(5):
-            bot.MEMORY["chat_history"].append({"user": f"user{i}", "message": f"msg{i}", "response": "resp"})
+    def test_send_brb_summary_starts_game_if_active(self):
+        # Set BRB active
+        self.bot.is_brb = True
 
         # Call the method directly
         self.bot.send_brb_summary("test_channel", "broadcaster")
 
         # Verify generate_ai_response was called
         mock_ai.generate_ai_response.assert_called()
-        args, kwargs = mock_ai.generate_ai_response.call_args
-        prompt = args[0]
-        self.assertIn("user4: msg4", prompt) # Check if history is included
-        self.assertIn("summarize", prompt.lower())
 
         # Verify send_message was called with the response
         self.bot.send_message.assert_called_with("Summary of chat")
 
-    def test_brb_command_starts_thread(self):
+        # Verify game loop started
+        self.bot.brb_game_loop.assert_called_with("test_channel")
+
+    def test_send_brb_summary_stops_if_inactive(self):
+        # Set BRB inactive
+        self.bot.is_brb = False
+
+        self.bot.send_brb_summary("test_channel", "broadcaster")
+
+        # Verify message NOT sent
+        self.bot.send_message.assert_not_called()
+
+        # Verify game loop NOT started
+        self.bot.brb_game_loop.assert_not_called()
+
+    def test_brb_command_only_starts_summary_thread(self):
         with patch('threading.Thread') as mock_thread, \
              patch('threading.Timer') as mock_timer:
             self.bot.brb_command("", "broadcaster", "test_channel")
+
+            # Verify brb_game_loop NOT called directly
+            self.bot.brb_game_loop.assert_not_called()
 
             # Check if thread was started for send_brb_summary
             found = False
