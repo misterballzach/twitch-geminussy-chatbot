@@ -1,5 +1,8 @@
 import os, sys, json, ssl, socket, asyncio, random, threading, requests, time, textwrap, traceback
 from database import create_tables, create_or_update_user, get_user, get_random_active_user, update_user_facts
+from ai_client import generate_ai_response, perform_google_search, extract_user_facts
+from games import GameManager
+import hashlib
 
 # ---------------- CONFIG ----------------
 CONFIG_FILE = "bot_config.json"
@@ -145,158 +148,7 @@ class ContextMonitor:
     def get_context(self):
         return "\n".join(self.context_buffer)
 
-# ---------------- SEARCH ----------------
-def perform_google_search(query, api_key, engine_id):
-    if not api_key or not engine_id:
-        return "Search configuration missing."
-
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "q": query,
-        "key": api_key,
-        "cx": engine_id,
-        "num": 3
-    }
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        results = []
-        for item in data.get("items", []):
-            title = item.get("title", "No title")
-            snippet = item.get("snippet", "No snippet")
-            link = item.get("link", "")
-            results.append(f"Title: {title}\nSnippet: {snippet}\nLink: {link}")
-
-        return "\n\n".join(results)
-    except requests.exceptions.HTTPError as e:
-        error_msg = f"Search failed: {e}"
-        try:
-            # Try to parse the JSON error response
-            if e.response is not None:
-                error_data = e.response.json()
-                if "error" in error_data and "message" in error_data["error"]:
-                    error_msg = f"Search failed: {error_data['error']['message']}"
-        except:
-            pass
-
-        # Log the full error with masked key for debugging
-        masked_key = api_key[:4] + "..." + api_key[-4:] if len(api_key) > 8 else "..."
-        print(f"[ERROR] Google Search failed. URL: {url}?q={query}&key={masked_key}&cx={engine_id}&num=3")
-        print(f"[ERROR] Response: {e.response.text if e.response is not None else 'No response'}")
-        return error_msg
-    except Exception as e:
-        print(f"[ERROR] Search failed: {e}")
-        return f"Search failed: {e}"
-
-def extract_user_facts(message, user, config):
-    prompt = f"Analyze the following message from user '{user}'. Identify if there are any permanent or semi-permanent facts about the user (e.g., location, profession, age, pets, hobbies, hardware specs, recurring problems). Ignore transient states or opinions. Return a JSON object with a key 'facts' containing a list of strings, or an empty list if no facts are found. ONLY return the JSON object, no other text. Message: {message}"
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
-    headers = {"Content-Type": "application/json"}
-    data = {"contents":[{"parts":[{"text": prompt}]}]}
-
-    try:
-        r = requests.post(url, headers=headers, json=data, timeout=10)
-        r.raise_for_status()
-        resp = r.json()
-
-        text_parts = []
-        if "candidates" in resp:
-            content = resp["candidates"][0].get("content", {})
-            parts = content.get("parts", [])
-            for part in parts:
-                if "text" in part:
-                    text_parts.append(part["text"])
-
-        response_text = " ".join(text_parts).strip()
-
-        # Strip markdown code blocks if present
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        if response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-
-        response_json = json.loads(response_text.strip())
-        facts = response_json.get("facts", [])
-        if facts:
-            update_user_facts(user, facts)
-            print(f"[FACTS] Updated facts for {user}: {facts}")
-    except Exception as e:
-        # It's expected that many messages won't have facts or won't parse correctly, so just log debug
-        print(f"[DEBUG] Fact extraction failed or no facts: {e}")
-
-# ---------------- GEMINI AI ----------------
-def generate_ai_response(prompt: str, user, config) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={config['gemini_api_key']}"
-    headers = {
-        "Content-Type": "application/json",
-    }
-
-    user_data = get_user(user)
-    favouritism_score = user_data["favouritism_score"] if user_data else 0
-
-    # Get user facts
-    user_facts = []
-    if user_data and user_data["facts"]:
-        try:
-            user_facts = json.loads(user_data["facts"])
-        except:
-            pass
-
-    facts_str = ""
-    if user_facts:
-        facts_str = f"\nKnown facts about {user}: {', '.join(user_facts)}"
-
-    # Get spoken context from monitor
-    spoken_context = ""
-    if 'context_monitor' in globals() and context_monitor:
-         spoken_context = f"\nRecent spoken context:\n{context_monitor.get_context()}\n"
-    elif 'bot_instance' in globals() and bot_instance and bot_instance.context_monitor:
-         spoken_context = f"\nRecent spoken context:\n{bot_instance.context_monitor.get_context()}\n"
-
-    personality_prompt = f"Respond in personality: {config['personality']}"
-    if "personality_traits" in config:
-        likes = ", ".join(config["personality_traits"].get("likes", []))
-        if likes:
-            personality_prompt += f"\nLikes: {likes}"
-        dislikes = ", ".join(config["personality_traits"].get("dislikes", []))
-        if dislikes:
-            personality_prompt += f"\nDislikes: {dislikes}"
-
-    prompt_with_context = f"{personality_prompt}{spoken_context}\nUser '{user}' has a favouritism score of {favouritism_score}.{facts_str}\n{prompt}"
-    data = {"contents":[{"parts":[{"text": prompt_with_context}]}]}
-
-    try:
-        r = requests.post(url, headers=headers, json=data, timeout=10)
-        r.raise_for_status()
-        resp = r.json()
-
-        # Parse Gemini Flash response
-        text_parts = []
-        candidates = resp.get("candidates", [])
-        if candidates:
-            content = candidates[0].get("content", {})
-            parts = content.get("parts", [])
-            for part in parts:
-                if "text" in part:
-                    text_parts.append(part["text"])
-        text = " ".join(text_parts).strip()
-        if not text:
-            print("[ERROR] Gemini response empty, full JSON:", resp)
-            return "Hmm… I couldn't come up with a response!"
-
-        max_length = config.get("max_response_length", 450)
-        if max_length is not None and len(text) > max_length:
-            text = text[:max_length] + "..."
-
-        return text
-    except Exception as e:
-        print(f"[ERROR] Gemini API call failed: {e}, full response: {r.text if 'r' in locals() else 'no response'}")
-        return "Hmm… I couldn't come up with a response!"
+# ---------------- SEARCH & AI & FACTS (Moved to ai_client.py) ----------------
 
 def analyze_sentiment_and_update_preferences(message, user, config):
     prompt = f"Analyze the sentiment of the following message and identify the main topics. Respond with a JSON object with two keys: 'sentiment' (either 'positive', 'negative', or 'neutral') and 'topics' (a list of strings). Message: {message}"
@@ -353,9 +205,22 @@ class IRCBot:
             "say": self.say_command,
             "uptime": self.uptime_command,
             "socials": self.socials_command,
-            "commands": self.commands_command
+            "commands": self.commands_command,
+            "trivia": self.trivia_command,
+            "guess": self.guess_command,
+            "scramble": self.scramble_command,
+            "rps": self.rps_command,
+            "roast": self.roast_command,
+            "8ball": self.eightball_command,
+            "love": self.love_command,
+            "brb": self.brb_command,
+            "back": self.back_command
         }
         self.context_monitor = ContextMonitor(self.config.get("caption_file_path"))
+        self.game_manager = GameManager(self.config, self.send_message)
+        self.is_brb = False
+        self.original_auto_chat_freq = self.config.get("auto_chat_freq", 0.2)
+        self.brb_timer = None
 
         # Expose bot instance globally for the generate_ai_response function to access context monitor
         global bot_instance
@@ -426,13 +291,21 @@ class IRCBot:
                     command = command_parts[0][1:].lower()
                     args = command_parts[1] if len(command_parts) > 1 else ""
                     self.handle_command(command, args, user, channel)
-                elif self.nick.lower() in message.lower():
-                    # Try to extract facts from the message
-                    threading.Thread(target=extract_user_facts, args=(message, user, self.config)).start()
+                else:
+                    # Check for active game answers
+                    response, points = self.game_manager.handle_message(channel, user, message)
+                    if response:
+                        self.send_message(response)
+                        if points > 0:
+                            create_or_update_user(user, favouritism_score_increment=points)
 
-                    prompt = message
-                    context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
-                    resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config)
+                    if self.nick.lower() in message.lower():
+                        # Try to extract facts from the message
+                        threading.Thread(target=extract_user_facts, args=(message, user, self.config)).start()
+
+                        prompt = message
+                        context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
+                    resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config, context_monitor=self.context_monitor)
                     save_memory(user, prompt, resp)
                     self.send_message(resp)
 
@@ -464,7 +337,7 @@ class IRCBot:
     def ai_command(self, args, user, channel):
         prompt = args
         context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
-        resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config)
+        resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config, context_monitor=self.context_monitor)
         save_memory(user, prompt, resp)
         self.send_message(resp)
 
@@ -490,7 +363,7 @@ class IRCBot:
 
         prompt = f"The user '{user}' asked: '{query}'.\n\nHere is some background information:\n{search_results}\n\nUsing this information, answer the user's question. Respond as a natural, organic participant in the chat. Do NOT mention that you performed a search or say 'according to the results'. Just give the answer or opinion as if you knew it. You can share relevant links naturally (e.g., 'I found this link:', 'Check this out:') if they add value."
 
-        response_text = generate_ai_response(prompt, user, self.config)
+        response_text = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
 
         # Save to memory so the conversation context is preserved
         save_memory(user, query, response_text)
@@ -521,12 +394,131 @@ class IRCBot:
         commands_list = "!".join(self.commands.keys())
         self.send_message(f"Available commands: !{commands_list}")
 
+    def trivia_command(self, args, user, channel):
+        msg = self.game_manager.start_game("trivia", channel, user)
+        self.send_message(msg)
+
+    def guess_command(self, args, user, channel):
+        msg = self.game_manager.start_game("guess", channel, user)
+        self.send_message(msg)
+
+    def scramble_command(self, args, user, channel):
+        msg = self.game_manager.start_game("scramble", channel, user)
+        self.send_message(msg)
+
+    def rps_command(self, args, user, channel):
+        if not args:
+            self.send_message(f"@{user}, usage: !rps <rock|paper|scissors>")
+            return
+
+        user_choice = args.lower().strip()
+        if user_choice not in ["rock", "paper", "scissors"]:
+            self.send_message(f"@{user}, please choose rock, paper, or scissors!")
+            return
+
+        bot_choice = random.choice(["rock", "paper", "scissors"])
+        result = ""
+
+        if user_choice == bot_choice:
+            result = "It's a tie!"
+        elif (user_choice == "rock" and bot_choice == "scissors") or \
+             (user_choice == "paper" and bot_choice == "rock") or \
+             (user_choice == "scissors" and bot_choice == "paper"):
+            result = "You win! 🎉"
+            create_or_update_user(user, favouritism_score_increment=1)
+        else:
+            result = "I win! 😈"
+
+        self.send_message(f"@{user} chose {user_choice}, I chose {bot_choice}. {result}")
+
+    def roast_command(self, args, user, channel):
+        target = args.strip() or user
+        prompt = f"Give me a funny, lighthearted roast for the user '{target}'. Keep it friendly and Twitch-safe."
+        response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
+        self.send_message(f"@{target} 🔥 {response}")
+
+    def eightball_command(self, args, user, channel):
+        if not args:
+            self.send_message(f"@{user}, ask me a question!")
+            return
+
+        responses = [
+            "It is certain.", "It is decidedly so.", "Without a doubt.", "Yes definitely.", "You may rely on it.",
+            "As I see it, yes.", "Most likely.", "Outlook good.", "Yes.", "Signs point to yes.",
+            "Reply hazy, try again.", "Ask again later.", "Better not tell you now.", "Cannot predict now.", "Concentrate and ask again.",
+            "Don't count on it.", "My reply is no.", "My sources say no.", "Outlook not so good.", "Very doubtful."
+        ]
+        response = random.choice(responses)
+        self.send_message(f"🎱 {response}")
+
+    def love_command(self, args, user, channel):
+        target = args.strip()
+        if not target:
+            self.send_message(f"@{user}, who do you want to check love compatibility with?")
+            return
+
+        # Deterministic love calculator based on names
+        combined = "".join(sorted([user.lower(), target.lower()]))
+        score = int(hashlib.sha256(combined.encode("utf-8")).hexdigest(), 16) % 101
+
+        msg = ""
+        if score > 90: msg = "It's destiny! ❤️"
+        elif score > 70: msg = "Hot stuff! 🔥"
+        elif score > 40: msg = "Maybe just friends? 🤝"
+        else: msg = "Oof... 🧊"
+
+        self.send_message(f"❤️ Love User Compatibility: {user} + {target} = {score}%! {msg}")
+
+    def brb_command(self, args, user, channel):
+        # Check if user is broadcaster or mod?
+        # For simplicity, assuming any user can trigger this locally, or ideally restrict to broadcaster
+        # In a real bot we'd check badges. For this task, we assume the user running the bot is the owner.
+        if self.is_brb:
+            self.send_message("I'm already in BRB mode!")
+            return
+
+        self.is_brb = True
+        self.original_auto_chat_freq = self.config.get("auto_chat_freq", 0.2)
+        # Increase engagement
+        self.config["auto_chat_freq"] = 0.8
+
+        self.send_message("Streamer is stepping away! 🏃‍♂️💨 Entertainment protocols engaged! Expect games and chaos!")
+
+        # Start game loop
+        self.brb_game_loop(channel)
+
+    def back_command(self, args, user, channel):
+        if not self.is_brb:
+            self.send_message("I wasn't in BRB mode, but welcome back!")
+            return
+
+        self.is_brb = False
+        self.config["auto_chat_freq"] = self.original_auto_chat_freq
+
+        if self.brb_timer:
+            self.brb_timer.cancel()
+
+        self.send_message("Streamer is back! 👋 Protocols normalizing.")
+
+    def brb_game_loop(self, channel):
+        if not self.is_brb: return
+
+        # Start a random game
+        msg = self.game_manager.start_random_game(channel)
+        if msg:
+            self.send_message(msg)
+
+        # Schedule next game in 2-4 minutes
+        interval = random.randint(120, 240)
+        self.brb_timer = threading.Timer(interval, self.brb_game_loop, [channel])
+        self.brb_timer.start()
+
     def conversation_starter_task(self):
         user_to_start_conversation_with = get_random_active_user()
         if user_to_start_conversation_with:
             username = user_to_start_conversation_with["username"]
             prompt = f"You want to start a conversation with the user '{username}'. Their favouritism score is {user_to_start_conversation_with['favouritism_score']}. Based on this, what would be a good way to start a conversation with them? Keep it short and natural."
-            response = generate_ai_response(prompt, username, self.config)
+            response = generate_ai_response(prompt, username, self.config, context_monitor=self.context_monitor)
             self.send_message(f"@{username}, {response}")
 
         self.conversation_starter_timer = threading.Timer(self.config.get("conversation_starter_interval", 900), self.conversation_starter_task)
@@ -540,7 +532,7 @@ class IRCBot:
                 for entry in chat_history:
                     prompt += f"{entry['user']}: {entry['message']}\n"
 
-                response = generate_ai_response(prompt, self.nick, self.config)
+                response = generate_ai_response(prompt, self.nick, self.config, context_monitor=self.context_monitor)
                 if len(response) > 200:
                     response = response[:200] + "..."
                 self.send_message(response)
