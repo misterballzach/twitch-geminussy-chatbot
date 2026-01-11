@@ -1,8 +1,0 @@
-{
-    "bot_username": "mytestbot",
-    "bot_token": "oauth:12345",
-    "gemini_api_key": "test_api_key",
-    "personality": "test personality",
-    "auto_chat_freq": 0.5,
-    "channel": "testchannel"
-}

@@ -1,7 +1,7 @@
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 import json
-from bot import generate_ai_response
+from ai_client import generate_ai_response
 from database import get_db_connection, set_favouritism_score, set_user_facts
 
 CONFIG_FILE = "bot_config.json"
