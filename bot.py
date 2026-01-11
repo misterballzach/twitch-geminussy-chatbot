@@ -214,7 +214,9 @@ class IRCBot:
             "8ball": self.eightball_command,
             "love": self.love_command,
             "brb": self.brb_command,
-            "back": self.back_command
+            "back": self.back_command,
+            "lurk": self.lurk_command,
+            "raidmsg": self.raidmsg_command
         }
         self.context_monitor = ContextMonitor(self.config.get("caption_file_path"))
         self.game_manager = GameManager(self.config, self.send_message)
@@ -319,13 +321,23 @@ class IRCBot:
                     user = tags.get("display-name")
                     if user:
                         create_or_update_user(user, is_subscriber=True, favouritism_score_increment=10)
-                        self.send_message(f"Thanks for the subscription, {user}!")
+                        # AI Subscription Welcome
+                        def _sub_welcome_task():
+                            prompt = f"User '{user}' just subscribed! Thank them enthusiastically in your personality."
+                            response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
+                            self.send_message(response)
+                        threading.Thread(target=_sub_welcome_task).start()
 
                 elif tags.get("msg-id") == "raid":
                     user = tags.get("display-name")
                     viewers = tags.get("msg-param-viewerCount")
                     if user and viewers:
-                        self.send_message(f"Welcome to the channel, {user} and their {viewers} raiders!")
+                        # AI Raid Welcome
+                        def _raid_welcome_task():
+                            prompt = f"User '{user}' just raided with {viewers} viewers! Give them a warm, hype welcome in your personality."
+                            response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
+                            self.send_message(response)
+                        threading.Thread(target=_raid_welcome_task).start()
         except Exception as e:
             print(f"[ERROR] Error in handle_line: {e}")
             traceback.print_exc()
@@ -468,6 +480,20 @@ class IRCBot:
         else: msg = "Oof... 🧊"
 
         self.send_message(f"❤️ Love User Compatibility: {user} + {target} = {score}%! {msg}")
+
+    def lurk_command(self, args, user, channel):
+        def _lurk_task():
+            prompt = f"User '{user}' is going into lurk mode (watching silently). Respond with a friendly/funny confirmation in your personality."
+            response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
+            self.send_message(response)
+        threading.Thread(target=_lurk_task).start()
+
+    def raidmsg_command(self, args, user, channel):
+        def _raidmsg_task():
+            prompt = "Write a hype raid message for our community to copy-paste when we raid another stream. It should be short, energetic, and include our channel emotes if you know them, or generic hype emotes."
+            response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
+            self.send_message(response)
+        threading.Thread(target=_raidmsg_task).start()
 
     def send_brb_summary(self, channel, user):
         try:
