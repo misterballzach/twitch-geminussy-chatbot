@@ -88,6 +88,35 @@ Commands
 
 !gemini <query> – Bot searches the web and answers the query directly (bypassing personality).
 
+!brb – Puts the bot in "BRB Mode". It posts an AI summary of recent chat/captions and starts running games automatically.
+
+!back – Returns the bot to normal mode.
+
+Games
+
+The bot features interactive chat games to keep the audience engaged. Games can be started manually with commands or run automatically during **BRB Mode**.
+
+**1. Trivia (!trivia)**
+*   **Description:** The bot generates a random trivia question using AI.
+*   **How to Play:** Simply type your answer in the chat.
+*   **Winning:** The bot checks if the correct answer is contained in your message. The first person to type the correct answer wins points!
+
+**2. Guess the Number (!guess)**
+*   **Description:** The bot selects a random number between 1 and 100.
+*   **How to Play:** Type a number (e.g., "42") in the chat.
+*   **Hints:** The bot will reply with "Higher! ⬆️" or "Lower! ⬇️" to guide you.
+*   **Winning:** The first person to guess the exact number wins.
+
+**3. Word Scramble (!scramble)**
+*   **Description:** The bot shuffles the letters of a common streaming/gaming word (e.g., "keybaord").
+*   **How to Play:** Type the unscrambled word in the chat.
+*   **Winning:** The first person to type the correct word wins.
+
+**4. Rock Paper Scissors (!rps)**
+*   **Description:** A quick game against the bot.
+*   **How to Play:** Type `!rps rock`, `!rps paper`, or `!rps scissors`.
+*   **Winning:** The bot randomly picks a move and declares a winner or a tie.
+
 Notes
 
 The bot logs all IRC activity to the console for transparency.
