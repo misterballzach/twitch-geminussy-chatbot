@@ -609,3 +609,9 @@ class IRCBot:
             print(f"[BOT] Sent to #{channel}: {chunk}")
         except Exception as e:
             print(f"[ERROR] Sending message failed: {e}")
+
+    def get_status_snapshot(self):
+        return {
+            "chat_history": get_recent_memory(50),
+            "captions": self.context_monitor.context_buffer if self.context_monitor else []
+        }

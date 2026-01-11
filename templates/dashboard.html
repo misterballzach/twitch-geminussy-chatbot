@@ -34,6 +34,19 @@
             <input type="text" id="say_msg">
             <button onclick="sendMessage()">Send</button>
         </div>
+        <div class="form-group">
+            <h2>Live Context</h2>
+            <div style="display: flex; gap: 20px;">
+                <div style="flex: 1;">
+                    <h3>Recent Chat</h3>
+                    <div id="chat-logs" style="height: 300px; overflow-y: scroll; background: #eee; padding: 10px; border-radius: 4px; font-family: monospace; white-space: pre-wrap;"></div>
+                </div>
+                <div style="flex: 1;">
+                    <h3>Captions</h3>
+                    <div id="caption-logs" style="height: 300px; overflow-y: scroll; background: #eee; padding: 10px; border-radius: 4px; font-family: monospace; white-space: pre-wrap;"></div>
+                </div>
+            </div>
+        </div>
         <div id="logs">
             <div class="log-message">Dashboard loaded.</div>
         </div>
@@ -362,6 +375,72 @@
 
         socket.on("disconnect", () => {
             addLog("Disconnected from server.");
+        });
+
+        // Live Context Monitoring
+        setInterval(() => {
+            socket.emit("get_live_context");
+        }, 1000);
+
+        const chatLogsDiv = document.getElementById("chat-logs");
+        const captionLogsDiv = document.getElementById("caption-logs");
+
+        socket.on("live_context_update", (data) => {
+            function updateLog(container, contentBuilder) {
+                const wasAtBottom = container.scrollHeight - container.scrollTop === container.clientHeight;
+
+                // Save current selection if any
+                // Note: Rebuilding innerHTML clears selection, but for this simple dashboard it's acceptable vs complex diffing
+
+                container.innerHTML = "";
+                contentBuilder(container);
+
+                if (wasAtBottom) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+
+            updateLog(chatLogsDiv, (container) => {
+                if (data.chat_history) {
+                    data.chat_history.forEach(entry => {
+                        const div = document.createElement("div");
+                        const userStrong = document.createElement("strong");
+                        userStrong.textContent = entry.user + ": ";
+
+                        const messageSpan = document.createElement("span");
+                        messageSpan.textContent = entry.message;
+
+                        const br = document.createElement("br");
+
+                        const botEm = document.createElement("em");
+                        botEm.textContent = "Bot: ";
+
+                        const responseSpan = document.createElement("span");
+                        responseSpan.textContent = entry.response;
+
+                        const hr = document.createElement("hr");
+
+                        div.appendChild(userStrong);
+                        div.appendChild(messageSpan);
+                        div.appendChild(br);
+                        div.appendChild(botEm);
+                        div.appendChild(responseSpan);
+                        div.appendChild(hr);
+
+                        container.appendChild(div);
+                    });
+                }
+            });
+
+            updateLog(captionLogsDiv, (container) => {
+                 if (data.captions) {
+                    data.captions.forEach(line => {
+                        const div = document.createElement("div");
+                        div.textContent = line;
+                        container.appendChild(div);
+                    });
+                }
+            });
         });
     </script>
 </body>

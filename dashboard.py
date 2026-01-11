@@ -146,5 +146,11 @@ def create_dashboard_app(bot):
         # Update the bot's config as well
         bot.config["conversation_starter"] = config["conversation_starter"]
 
+    @socketio.on("get_live_context")
+    def handle_get_live_context():
+        if bot:
+            snapshot = bot.get_status_snapshot()
+            emit("live_context_update", snapshot)
+
     app.debug = True
     return app, socketio
