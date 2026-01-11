@@ -344,10 +344,10 @@ def analyze_sentiment_and_update_preferences(message, user, config):
         print(f"[DEBUG] Failed text: {response_text}")
 
 # ---------------- MEMORY ----------------
-def save_memory(user, msg, response):
-    MEMORY["chat_history"].append({"user": user, "message": msg, "response": response})
-    if len(MEMORY["chat_history"]) > 50:
-        MEMORY["chat_history"] = MEMORY["chat_history"][-50:]
+def record_message(user, message):
+    MEMORY["chat_history"].append({"user": user, "message": message})
+    if len(MEMORY["chat_history"]) > 100:
+        MEMORY["chat_history"] = MEMORY["chat_history"][-100:]
 
 def get_recent_memory(n=5):
     return MEMORY["chat_history"][-n:]
@@ -452,6 +452,8 @@ class IRCBot:
                 message = parts[2]
                 print(f"[CHAT] {user}: {message}")
 
+                record_message(user, message)
+
                 create_or_update_user(user, message_count_increment=1)
 
                 if random.random() < self.config.get("sentiment_analysis_probability", 0.1):
@@ -478,10 +480,10 @@ class IRCBot:
                         threading.Thread(target=extract_user_facts, args=(message, user, self.config)).start()
 
                         prompt = message
-                        context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
-                    resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config, context_monitor=self.context_monitor)
-                    save_memory(user, prompt, resp)
-                    self.send_message(resp, channel)
+                        context = "\n".join([f"{m['user']}: {m['message']}" for m in get_recent_memory()])
+                        resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config, context_monitor=self.context_monitor)
+                        record_message(self.nick, resp)
+                        self.send_message(resp, channel)
 
             elif "USERNOTICE" in line:
                 parts = line.split(":", 2)
@@ -523,9 +525,9 @@ class IRCBot:
 
     def ai_command(self, args, user, channel):
         prompt = args
-        context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
+        context = "\n".join([f"{m['user']}: {m['message']}" for m in get_recent_memory()])
         resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config, context_monitor=self.context_monitor)
-        save_memory(user, prompt, resp)
+        record_message(self.nick, resp)
         self.send_message(resp, channel)
 
     def gemini_command(self, args, user, channel):
@@ -553,7 +555,7 @@ class IRCBot:
         response_text = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
 
         # Save to memory so the conversation context is preserved
-        save_memory(user, query, response_text)
+        record_message(self.nick, response_text)
 
         self.send_message(f"@{user} {response_text}", channel)
 
@@ -867,6 +869,7 @@ class IRCBot:
                 response = generate_ai_response(prompt, self.nick, self.config, context_monitor=self.context_monitor)
                 if len(response) > 200:
                     response = response[:200] + "..."
+                record_message(self.nick, response)
                 self.send_message(response)
 
         self.auto_chat_timer = threading.Timer(self.config.get("auto_chat_interval", 600), self.auto_chat)
