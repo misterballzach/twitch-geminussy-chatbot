@@ -1,9 +1,0 @@
-(9897) wsgi starting up on http://127.0.0.1:5000
-(9897) accepted ('127.0.0.1', 57776)
-127.0.0.1 - - [10/Jan/2026 20:25:49] "GET / HTTP/1.1" 200 16869 0.011198
-127.0.0.1 - - [10/Jan/2026 20:25:50] "GET /socket.io/?EIO=4&transport=polling&t=PkfbYt3 HTTP/1.1" 200 300 0.000535
-127.0.0.1 - - [10/Jan/2026 20:25:50] "POST /socket.io/?EIO=4&transport=polling&t=PkfbYwR&sid=D2COf8bvli14V7TuAAAA HTTP/1.1" 200 219 0.001061
-(9897) accepted ('127.0.0.1', 57778)
-127.0.0.1 - - [10/Jan/2026 20:25:50] "GET /socket.io/?EIO=4&transport=polling&t=PkfbYx2&sid=D2COf8bvli14V7TuAAAA HTTP/1.1" 200 213 0.000226
-127.0.0.1 - - [10/Jan/2026 20:25:50] "GET /socket.io/?EIO=4&transport=polling&t=PkfbYxS&sid=D2COf8bvli14V7TuAAAA HTTP/1.1" 200 181 0.000218
-127.0.0.1 - - [10/Jan/2026 20:25:53] "GET /socket.io/?EIO=4&transport=websocket&sid=D2COf8bvli14V7TuAAAA HTTP/1.1" 200 0 2.642761

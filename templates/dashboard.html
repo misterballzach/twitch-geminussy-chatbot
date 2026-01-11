@@ -407,24 +407,22 @@
                         const userStrong = document.createElement("strong");
                         userStrong.textContent = entry.user + ": ";
 
+                        // Highlight bot messages if needed (e.g. check against a known bot name if available,
+                        // or just rely on the name)
+                        if (entry.user.toLowerCase().includes("bot")) {
+                             userStrong.style.color = "#5b21b6";
+                        }
+
                         const messageSpan = document.createElement("span");
                         messageSpan.textContent = entry.message;
 
-                        const br = document.createElement("br");
-
-                        const botEm = document.createElement("em");
-                        botEm.textContent = "Bot: ";
-
-                        const responseSpan = document.createElement("span");
-                        responseSpan.textContent = entry.response;
-
                         const hr = document.createElement("hr");
+                        hr.style.margin = "5px 0";
+                        hr.style.border = "none";
+                        hr.style.borderTop = "1px solid #ddd";
 
                         div.appendChild(userStrong);
                         div.appendChild(messageSpan);
-                        div.appendChild(br);
-                        div.appendChild(botEm);
-                        div.appendChild(responseSpan);
                         div.appendChild(hr);
 
                         container.appendChild(div);
