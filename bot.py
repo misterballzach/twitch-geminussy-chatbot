@@ -210,12 +210,16 @@ class TwitchEventSub:
         for ch in self.config["channels"]:
             bid = get_broadcaster_id(ch, self.client_id, self.token)
             if bid:
-                self.broadcaster_ids[ch] = bid
+                # IMPORTANT: Ad detection requires the token to belong to the broadcaster
+                if bid == user_id:
+                    self.broadcaster_ids[ch] = bid
+                else:
+                    print(f"[EVENTSUB] Skipping ad detection for {ch}. Bot token does not belong to the broadcaster.")
             else:
                 print(f"[EVENTSUB] Could not find ID for channel {ch}")
 
         if not self.broadcaster_ids:
-            print("[EVENTSUB] No valid channels to monitor.")
+            print("[EVENTSUB] No valid channels to monitor (Token must belong to Broadcaster).")
             return
 
         # 3. Connect to WebSocket
@@ -461,7 +465,7 @@ class IRCBot:
                     # Check for active game answers
                     response, points = self.game_manager.handle_message(channel, user, message)
                     if response:
-                        self.send_message(response)
+                        self.send_message(response, channel)
                         if points > 0:
                             create_or_update_user(user, favouritism_score_increment=points)
 
@@ -473,13 +477,16 @@ class IRCBot:
                         context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
                     resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config, context_monitor=self.context_monitor)
                     save_memory(user, prompt, resp)
-                    self.send_message(resp)
+                    self.send_message(resp, channel)
 
             elif "USERNOTICE" in line:
                 parts = line.split(":", 2)
                 if len(parts) < 3: return
                 message = parts[2]
                 tags = {t.split("=")[0]: t.split("=")[1] for t in parts[0].split(";") if "=" in t}
+                # Usernotice channel (not fully parsed above but usually after USERNOTICE)
+                # Format: ... USERNOTICE #channel ...
+                channel = parts[1].split(" ")[2][1:]
 
                 if tags.get("msg-id") == "sub" or tags.get("msg-id") == "resub":
                     user = tags.get("display-name")
@@ -489,7 +496,7 @@ class IRCBot:
                         def _sub_welcome_task():
                             prompt = f"User '{user}' just subscribed! Thank them enthusiastically in your personality."
                             response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
-                            self.send_message(response)
+                            self.send_message(response, channel)
                         threading.Thread(target=_sub_welcome_task).start()
 
                 elif tags.get("msg-id") == "raid":
@@ -500,7 +507,7 @@ class IRCBot:
                         def _raid_welcome_task():
                             prompt = f"User '{user}' just raided with {viewers} viewers! Give them a warm, hype welcome in your personality."
                             response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
-                            self.send_message(response)
+                            self.send_message(response, channel)
                         threading.Thread(target=_raid_welcome_task).start()
         except Exception as e:
             print(f"[ERROR] Error in handle_line: {e}")
@@ -515,26 +522,26 @@ class IRCBot:
         context = "\n".join([f"{m['user']}: {m['message']}\nBot: {m['response']}" for m in get_recent_memory()])
         resp = generate_ai_response(f"{context}\n{user} says: {prompt}", user, self.config, context_monitor=self.context_monitor)
         save_memory(user, prompt, resp)
-        self.send_message(resp)
+        self.send_message(resp, channel)
 
     def gemini_command(self, args, user, channel):
         query = args
         if not query:
-            self.send_message("Please provide a query for Gemini.")
+            self.send_message("Please provide a query for Gemini.", channel)
             return
 
         api_key = self.config.get("google_search_api_key")
         engine_id = self.config.get("google_search_engine_id")
 
         if not api_key or not engine_id:
-            self.send_message("Google Search is not configured.")
+            self.send_message("Google Search is not configured.", channel)
             return
 
-        self.send_message(f"Searching for '{query}'...")
+        self.send_message(f"Searching for '{query}'...", channel)
         search_results = perform_google_search(query, api_key, engine_id)
 
         if search_results.startswith("Search failed:"):
-            self.send_message(f"Search failed. Please check your Google Search API key and Engine ID. Error: {search_results.replace('Search failed: ', '')}")
+            self.send_message(f"Search failed. Please check your Google Search API key and Engine ID. Error: {search_results.replace('Search failed: ', '')}", channel)
             return
 
         prompt = f"The user '{user}' asked: '{query}'.\n\nHere is some background information:\n{search_results}\n\nUsing this information, answer the user's question. Respond as a natural, organic participant in the chat. Do NOT mention that you performed a search or say 'according to the results'. Just give the answer or opinion as if you knew it. You can share relevant links naturally (e.g., 'I found this link:', 'Check this out:') if they add value."
@@ -544,52 +551,52 @@ class IRCBot:
         # Save to memory so the conversation context is preserved
         save_memory(user, query, response_text)
 
-        self.send_message(f"@{user} {response_text}")
+        self.send_message(f"@{user} {response_text}", channel)
 
     def say_command(self, args, user, channel):
-        self.send_message(args)
+        self.send_message(args, channel)
 
     def uptime_command(self, args, user, channel):
         try:
             url = f"https://decapi.me/twitch/uptime/{channel}"
             response = requests.get(url)
             response.raise_for_status()
-            self.send_message(f"Stream has been live for: {response.text}")
+            self.send_message(f"Stream has been live for: {response.text}", channel)
         except requests.exceptions.RequestException as e:
             print(f"[ERROR] Uptime command failed: {e}")
-            self.send_message("Could not retrieve uptime.")
+            self.send_message("Could not retrieve uptime.", channel)
 
     def socials_command(self, args, user, channel):
         if "socials" in self.config and self.config["socials"]:
             socials_message = "Follow us on social media: " + ", ".join([f"{platform}: {link}" for platform, link in self.config["socials"].items()])
-            self.send_message(socials_message)
+            self.send_message(socials_message, channel)
         else:
-            self.send_message("No social media links configured.")
+            self.send_message("No social media links configured.", channel)
 
     def commands_command(self, args, user, channel):
         commands_list = "!".join(self.commands.keys())
-        self.send_message(f"Available commands: !{commands_list}")
+        self.send_message(f"Available commands: !{commands_list}", channel)
 
     def trivia_command(self, args, user, channel):
         msg = self.game_manager.start_game("trivia", channel, user)
-        self.send_message(msg)
+        self.send_message(msg, channel)
 
     def guess_command(self, args, user, channel):
         msg = self.game_manager.start_game("guess", channel, user)
-        self.send_message(msg)
+        self.send_message(msg, channel)
 
     def scramble_command(self, args, user, channel):
         msg = self.game_manager.start_game("scramble", channel, user)
-        self.send_message(msg)
+        self.send_message(msg, channel)
 
     def rps_command(self, args, user, channel):
         if not args:
-            self.send_message(f"@{user}, usage: !rps <rock|paper|scissors>")
+            self.send_message(f"@{user}, usage: !rps <rock|paper|scissors>", channel)
             return
 
         user_choice = args.lower().strip()
         if user_choice not in ["rock", "paper", "scissors"]:
-            self.send_message(f"@{user}, please choose rock, paper, or scissors!")
+            self.send_message(f"@{user}, please choose rock, paper, or scissors!", channel)
             return
 
         bot_choice = random.choice(["rock", "paper", "scissors"])
@@ -605,17 +612,17 @@ class IRCBot:
         else:
             result = "I win! 😈"
 
-        self.send_message(f"@{user} chose {user_choice}, I chose {bot_choice}. {result}")
+        self.send_message(f"@{user} chose {user_choice}, I chose {bot_choice}. {result}", channel)
 
     def roast_command(self, args, user, channel):
         target = args.strip() or user
         prompt = f"Give me a funny, lighthearted roast for the user '{target}'. Keep it friendly and Twitch-safe."
         response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
-        self.send_message(f"@{target} 🔥 {response}")
+        self.send_message(f"@{target} 🔥 {response}", channel)
 
     def eightball_command(self, args, user, channel):
         if not args:
-            self.send_message(f"@{user}, ask me a question!")
+            self.send_message(f"@{user}, ask me a question!", channel)
             return
 
         responses = [
@@ -625,12 +632,12 @@ class IRCBot:
             "Don't count on it.", "My reply is no.", "My sources say no.", "Outlook not so good.", "Very doubtful."
         ]
         response = random.choice(responses)
-        self.send_message(f"🎱 {response}")
+        self.send_message(f"🎱 {response}", channel)
 
     def love_command(self, args, user, channel):
         target = args.strip()
         if not target:
-            self.send_message(f"@{user}, who do you want to check love compatibility with?")
+            self.send_message(f"@{user}, who do you want to check love compatibility with?", channel)
             return
 
         # Deterministic love calculator based on names
@@ -643,20 +650,20 @@ class IRCBot:
         elif score > 40: msg = "Maybe just friends? 🤝"
         else: msg = "Oof... 🧊"
 
-        self.send_message(f"❤️ Love User Compatibility: {user} + {target} = {score}%! {msg}")
+        self.send_message(f"❤️ Love User Compatibility: {user} + {target} = {score}%! {msg}", channel)
 
     def lurk_command(self, args, user, channel):
         def _lurk_task():
             prompt = f"User '{user}' is going into lurk mode (watching silently). Respond with a friendly/funny confirmation in your personality."
             response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
-            self.send_message(response)
+            self.send_message(response, channel)
         threading.Thread(target=_lurk_task).start()
 
     def raidmsg_command(self, args, user, channel):
         def _raidmsg_task():
             prompt = "Write a hype raid message for our community to copy-paste when we raid another stream. It should be short, energetic, and include our channel emotes if you know them, or generic hype emotes."
             response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
-            self.send_message(response)
+            self.send_message(response, channel)
         threading.Thread(target=_raidmsg_task).start()
 
     def send_brb_summary(self, channel, user, context_type="brb"):
@@ -689,9 +696,9 @@ class IRCBot:
     def start_ad_mode(self, channel, duration):
         if self.is_ad_break: return # Already running
         self.is_ad_break = True
-        print(f"[BOT] Starting Ad Mode for {duration}s")
+        print(f"[BOT] Starting Ad Mode for {duration}s on {channel}")
 
-        self.send_message(f"📺 Ad break started! For those stuck in ads, here's a quick summary of what's happening and a game! (Sub to skip ads!)")
+        self.send_message(f"📺 Ad break started! For those stuck in ads, here's a quick summary of what's happening and a game! (Sub to skip ads!)", channel)
 
         # Start summary and games
         threading.Thread(target=self.send_brb_summary, args=(channel, "System", "ad")).start()
@@ -708,7 +715,7 @@ class IRCBot:
 
         msg = self.game_manager.start_random_game(channel)
         if msg:
-            self.send_message(msg)
+            self.send_message(msg, channel)
 
         # Schedule next game quickly (every 60s) during ads if ad is long?
         # Typically ads are 30-180s. One game might be enough.
@@ -720,7 +727,7 @@ class IRCBot:
         # For simplicity, assuming any user can trigger this locally, or ideally restrict to broadcaster
         # In a real bot we'd check badges. For this task, we assume the user running the bot is the owner.
         if self.is_brb:
-            self.send_message("I'm already in BRB mode!")
+            self.send_message("I'm already in BRB mode!", channel)
             return
 
         self.is_brb = True
@@ -728,14 +735,14 @@ class IRCBot:
         # Increase engagement
         self.config["auto_chat_freq"] = 0.8
 
-        self.send_message("Streamer is stepping away! 🏃‍♂️💨 Entertainment protocols engaged! Expect games and chaos!")
+        self.send_message("Streamer is stepping away! 🏃‍♂️💨 Entertainment protocols engaged! Expect games and chaos!", channel)
 
         # Send summary in background, which will then trigger the game loop
         threading.Thread(target=self.send_brb_summary, args=(channel, user)).start()
 
     def back_command(self, args, user, channel):
         if not self.is_brb:
-            self.send_message("I wasn't in BRB mode, but welcome back!")
+            self.send_message("I wasn't in BRB mode, but welcome back!", channel)
             return
 
         self.is_brb = False
@@ -744,7 +751,7 @@ class IRCBot:
         if self.brb_timer:
             self.brb_timer.cancel()
 
-        self.send_message("Streamer is back! 👋 Protocols normalizing.")
+        self.send_message("Streamer is back! 👋 Protocols normalizing.", channel)
 
     def brb_game_loop(self, channel):
         if not self.is_brb: return
@@ -821,7 +828,7 @@ class IRCBot:
         self.send_message(f"/timeout {user} {duration}")
         create_or_update_user(user, favouritism_score_increment=-5)
 
-    def send_message(self, msg):
+    def send_message(self, msg, channel=None):
         if not msg:
             return
 
@@ -834,7 +841,10 @@ class IRCBot:
         for paragraph in paragraphs:
             # Split into 500-character chunks
             chunks = textwrap.wrap(paragraph, width=500, replace_whitespace=False)
-            for ch in self.channels:
+
+            target_channels = [channel] if channel else self.channels
+
+            for ch in target_channels:
                 for chunk in chunks:
                     delay = base_delay + (len(chunk) * delay_per_character)
                     threading.Thread(target=self._send_message_chunk, args=(ch, chunk, delay)).start()
