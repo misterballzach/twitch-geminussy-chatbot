@@ -681,8 +681,29 @@ class IRCBot:
             # 2. Post to local chat
             self.send_message(f"🚨 RAID INCOMING! Copy this: {message}", channel)
 
-            # 3. Trigger Twitch raid
-            self.send_message(f"/raid {target_user}", channel)
+            # 3. Trigger Twitch raid via API (more reliable than chat command)
+            try:
+                client_id, user_id, _ = validate_token(self.token)
+                target_id = get_broadcaster_id(target_user, client_id, self.token)
+
+                if user_id and target_id:
+                    url = f"https://api.twitch.tv/helix/raids?from_broadcaster_id={user_id}&to_broadcaster_id={target_id}"
+                    headers = {
+                        "Client-ID": client_id,
+                        "Authorization": f"Bearer {self.token.replace('oauth:', '')}"
+                    }
+                    resp = requests.post(url, headers=headers, timeout=10)
+                    if resp.status_code in [200, 201, 204]:
+                        print(f"[RAID] Raid initiated via API to {target_user}")
+                    else:
+                        print(f"[RAID] API Raid failed: {resp.text}. Falling back to chat command.")
+                        self.send_message(f"/raid {target_user}", channel)
+                else:
+                    print("[RAID] Could not resolve IDs. Falling back to chat command.")
+                    self.send_message(f"/raid {target_user}", channel)
+            except Exception as e:
+                print(f"[RAID] API Error: {e}. Falling back to chat command.")
+                self.send_message(f"/raid {target_user}", channel)
 
             # 4. Invasion: Join target channel and post
             try:
