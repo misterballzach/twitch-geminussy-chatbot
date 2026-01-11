@@ -470,16 +470,26 @@ class IRCBot:
         self.send_message(f"❤️ Love User Compatibility: {user} + {target} = {score}%! {msg}")
 
     def send_brb_summary(self, channel, user):
-        history = get_recent_memory(30)
-        history_str = ""
-        for entry in history:
-            history_str += f"{entry['user']}: {entry['message']}\n"
+        try:
+            history = get_recent_memory(30)
+            history_str = ""
+            for entry in history:
+                history_str += f"{entry['user']}: {entry['message']}\n"
 
-        prompt = f"The streamer is stepping away (BRB). Please summarize the recent conversation (last 20-30 messages) and spoken context for the chat. Keep it brief and fun. Here is the recent chat history:\n\n{history_str}"
+            prompt = f"The streamer is stepping away (BRB). Please summarize the recent conversation (last 20-30 messages) and spoken context for the chat. Keep it brief and fun. Here is the recent chat history:\n\n{history_str}"
 
-        # generate_ai_response will handle appending the spoken context from context_monitor
-        response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
-        self.send_message(response)
+            # generate_ai_response will handle appending the spoken context from context_monitor
+            response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
+
+            # Check if still in BRB mode before sending
+            if self.is_brb:
+                self.send_message(response)
+        except Exception as e:
+            print(f"[ERROR] Failed to generate BRB summary: {e}")
+        finally:
+            # Always try to start game loop if still in BRB mode, even if summary failed
+            if self.is_brb:
+                self.brb_game_loop(channel)
 
     def brb_command(self, args, user, channel):
         # Check if user is broadcaster or mod?
@@ -496,11 +506,8 @@ class IRCBot:
 
         self.send_message("Streamer is stepping away! 🏃‍♂️💨 Entertainment protocols engaged! Expect games and chaos!")
 
-        # Send summary in background
+        # Send summary in background, which will then trigger the game loop
         threading.Thread(target=self.send_brb_summary, args=(channel, user)).start()
-
-        # Start game loop
-        self.brb_game_loop(channel)
 
     def back_command(self, args, user, channel):
         if not self.is_brb:
