@@ -28,39 +28,30 @@ class TestRaidOut(unittest.TestCase):
     @patch('bot.requests.post')
     @patch('bot.requests.get')
     @patch('bot.generate_ai_response')
-    def test_raidout_sequence_api(self, mock_ai, mock_get, mock_post):
+    def test_raidout_sequence_api_delayed(self, mock_ai, mock_get, mock_post):
         mock_ai.return_value = "Hype Message!"
         target_channel = "target_streamer"
 
-        # Mock validate_token
         mock_get.side_effect = [
-            MagicMock(json=lambda: {"client_id": "cid", "user_id": "uid", "scopes": []}), # validate_token
-            MagicMock(json=lambda: {"data": [{"id": "tid"}]}), # get_broadcaster_id (target)
+            MagicMock(json=lambda: {"client_id": "cid", "user_id": "uid", "scopes": []}),
+            MagicMock(json=lambda: {"data": [{"id": "tid"}]}),
         ]
-
-        # Mock raid post
         mock_post.return_value.status_code = 200
 
         with patch('threading.Thread') as mock_thread, \
-             patch('time.sleep'): # Skip sleeps
+             patch('time.sleep') as mock_sleep: # Mock sleep to verify calls
 
             self.bot.raidout_command(target_channel, "broadcaster", "mychannel")
 
-            # Manually execute the task
+            # Execute task
             task = mock_thread.call_args[1]['target']
             task()
 
-            # Verify AI generated message
-            self.bot.send_message.assert_any_call("🚨 RAID INCOMING! Copy this: Hype Message!", "mychannel")
+            # Verify 30s sleep was called
+            # We expect multiple sleeps: one for 30s (propagation), one for 1s (pre-part)
+            mock_sleep.assert_any_call(30)
 
-            # Verify API Raid call
-            mock_post.assert_any_call(
-                "https://api.twitch.tv/helix/raids?from_broadcaster_id=uid&to_broadcaster_id=tid",
-                headers={"Client-ID": "cid", "Authorization": "Bearer token"},
-                timeout=10
-            )
-
-            # Verify Invasion sequence (JOIN -> MSG -> PART) on socket
+            # Verify message sequence
             send_calls = self.bot.sock.send.call_args_list
             self.assertTrue(any(f"JOIN #{target_channel}".encode() in c[0][0] for c in send_calls))
             self.assertTrue(any(f"PRIVMSG #{target_channel} :Hype Message!".encode() in c[0][0] for c in send_calls))

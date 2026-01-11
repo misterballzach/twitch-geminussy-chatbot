@@ -713,9 +713,13 @@ class IRCBot:
 
                 # Check if we are already in the target channel (unlikely for random raids)
                 if target_user not in self.channels:
+                    print(f"[RAID] Joining #{target_user} for invasion...")
                     with self.sock_lock:
                         self.sock.send(f"JOIN #{target_user}\r\n".encode("utf-8"))
-                    time.sleep(2) # Wait for join
+
+                    # Wait 30s for the raid to propagate so we don't beat the viewers
+                    print(f"[RAID] Waiting 30s for raid propagation before posting in #{target_user}...")
+                    time.sleep(30)
 
                     # Send the hype message
                     with self.sock_lock:
@@ -728,6 +732,8 @@ class IRCBot:
                         self.sock.send(f"PART #{target_user}\r\n".encode("utf-8"))
                 else:
                     # Already in channel, just send
+                    print(f"[RAID] Already in #{target_user}, waiting 30s...")
+                    time.sleep(30)
                     with self.sock_lock:
                         self.sock.send(f"PRIVMSG #{target_user} :{message}\r\n".encode("utf-8"))
 
