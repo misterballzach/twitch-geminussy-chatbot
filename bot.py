@@ -488,7 +488,7 @@ class IRCBot:
             self.send_message(f"Search failed. Please check your Google Search API key and Engine ID. Error: {search_results.replace('Search failed: ', '')}")
             return
 
-        prompt = f"The user '{user}' asked: '{query}'.\n\nI have performed a Google search and found the following information:\n{search_results}\n\nUsing this information, answer the user's question. Act natural, like a human chatter watching the stream, and integrate the answer into the conversation. Include relevant links from the search results if helpful."
+        prompt = f"The user '{user}' asked: '{query}'.\n\nHere is some background information:\n{search_results}\n\nUsing this information, answer the user's question. Respond as a natural, organic participant in the chat. Do NOT mention that you performed a search or say 'according to the results'. Just give the answer or opinion as if you knew it. You can share relevant links naturally (e.g., 'I found this link:', 'Check this out:') if they add value."
 
         response_text = generate_ai_response(prompt, user, self.config)
 
