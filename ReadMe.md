@@ -4,32 +4,36 @@ A Twitch chat bot powered by Google Gemini AI with personality, memory, and real
 
 Features
 
-Responds in chat with a defined personality.
+### 🧠 Core AI Capabilities
+*   **Personality Engine:** Responds in chat with a fully customizable personality (e.g., "silly grandma", "cyberpunk hacker").
+*   **Contextual Hearing:** Monitors a live caption file to "hear" what the streamer is saying, allowing the bot to react to spoken context, not just chat text.
+*   **Long-term Memory:** Learns and remembers permanent facts about users (e.g., "User X plays guitar", "User Y is from Canada") to make future conversations more personal.
+*   **Web Search:** Uses Google Search to answer questions with up-to-date information (`!gemini <query>`).
 
-Rewrites messages in your bot’s style (!say command).
+### 🤝 Engagement & Automation
+*   **Automatic Ad Detection:** Connects to Twitch EventSub to detect when ads start. The bot automatically posts a stream summary for non-subs and starts a game to keep them retained.
+*   **BRB Mode (`!brb`):** When you step away, the bot takes over! It posts an AI-generated summary of recent chat/captions to catch everyone up and starts running games automatically.
+*   **Smart Welcomes:**
+    *   **Raids:** Greets incoming raiders with a hype, personality-driven welcome message.
+    *   **Subs:** Thanks subscribers with a unique, enthusiastic AI response.
+*   **Engagement Commands:**
+    *   `!lurk`: Generates a friendly, funny send-off for lurkers.
+    *   `!raidmsg`: Generates a hype "raid message" for your community to copy-paste when raiding out.
 
-Auto-chat with configurable frequency.
-
-Maintains recent chat history for context-aware responses.
-
-**Contextual Hearing:** Monitors a local caption file to understand spoken context from the streamer.
-
-**Web Search:** Can perform Google searches to answer questions directly (!gemini command).
-
-**Long-term Memory:** Learns and remembers facts about users (hobbies, location, etc.) over time.
-
-Web dashboard to adjust personality and auto-chat frequency in real-time.
-
-Logs all chat messages and bot responses in the console.
+### 🎮 Chat Games
+Built-in interactive games to boost engagement during downtime or ad breaks.
+*   **Trivia:** AI-generated questions on any topic.
+*   **Guess the Number:** Classic high/low guessing game.
+*   **Word Scramble:** Unscramble streaming/gaming terms.
+*   **Rock Paper Scissors:** Play against the bot.
 
 Requirements
 
 Python 3.13+
 
-Libraries: requests, flask, flask-socketio, eventlet
+Libraries: `requests`, `flask`, `flask-socketio`, `eventlet`, `websocket-client`
 
-A Twitch OAuth token (from Twitch Token Generator
-)
+A Twitch OAuth token (from [Twitch Token Generator](https://twitchtokengenerator.com))
 
 Google Gemini API key
 
@@ -82,19 +86,33 @@ Adjust the personality and auto-chat frequency in real-time.
 
 Commands
 
-!say <message> – Bot rewrites the message in its personality and sends it to chat.
+**AI & Utility**
+*   `!say <message>` – Bot rewrites the message in its personality and sends it to chat.
+*   `!ai <message>` – Chat with the bot. It uses memory and context to reply.
+*   `!gemini <query>` – Ask the bot to search the web (e.g., "Who won the game last night?").
 
-!ai <message> – Bot generates a Gemini AI response with memory context.
+**Stream Management**
+*   `!brb` – Triggers "BRB Mode": Posts an AI recap of the last 30 messages/captions and runs games.
+*   `!back` – Ends BRB Mode.
+*   `!uptime` – Shows how long the stream has been live.
+*   `!socials` – Posts your configured social media links.
 
-!gemini <query> – Bot searches the web and answers the query directly (bypassing personality).
+**Fun & Engagement**
+*   `!lurk` – Get a personalized "goodbye/lurk" message from the AI.
+*   `!raidmsg` – Get a hype raid message to copy/paste.
+*   `!roast <user>` – Ask the bot to lightly roast a user.
+*   `!love <user>` – Check love compatibility (for fun).
+*   `!8ball <question>` – Classic magic 8-ball answers.
 
-!brb – Puts the bot in "BRB Mode". It posts an AI summary of recent chat/captions and starts running games automatically.
+**Games**
+*   `!trivia` – Start a trivia question.
+*   `!guess` – Start a "Guess the Number" game.
+*   `!scramble` – Start a word scramble.
+*   `!rps <move>` – Play Rock-Paper-Scissors.
 
-!back – Returns the bot to normal mode.
+Detailed Gameplay Guide
 
-Games
-
-The bot features interactive chat games to keep the audience engaged. Games can be started manually with commands or run automatically during **BRB Mode**.
+The bot features interactive chat games to keep the audience engaged. Games can be started manually with commands or run automatically during **BRB Mode** or **Ad Breaks**.
 
 **1. Trivia (!trivia)**
 *   **Description:** The bot generates a random trivia question using AI.
