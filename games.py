@@ -46,7 +46,7 @@ class TriviaGame(Game):
 
         self.loading = False
         if self.send_message_callback and self.is_active:
-             self.send_message_callback(f"🎉 TRIVIA TIME! 🎉\nQuestion: {self.question}")
+             self.send_message_callback(f"🎉 TRIVIA TIME! 🎉\nQuestion: {self.question}", self.channel)
 
     def get_start_message(self):
         return "⏳ Fetching a trivia question from the AI... Get ready!"
