@@ -20,6 +20,9 @@ def validate_token(token):
         if "channel:read:ads" not in scopes:
             print("[WARNING] Token missing 'channel:read:ads' scope. Auto-ad detection will not work.")
 
+        if "channel:manage:raids" not in scopes:
+            print("[WARNING] Token missing 'channel:manage:raids' scope. !raidout command will fall back to chat commands.")
+
         return client_id, user_id, scopes
     except Exception as e:
         print(f"[ERROR] Token validation failed: {e}")
@@ -694,9 +697,9 @@ class IRCBot:
                     }
                     resp = requests.post(url, headers=headers, timeout=10)
                     if resp.status_code in [200, 201, 204]:
-                        print(f"[RAID] Raid initiated via API to {target_user}")
+                        print(f"[RAID] Raid initiated via API to {target_user} (Status: {resp.status_code})")
                     else:
-                        print(f"[RAID] API Raid failed: {resp.text}. Falling back to chat command.")
+                        print(f"[RAID] API Raid failed. Status: {resp.status_code}. Response: {resp.text}. Falling back to chat command.")
                         self.send_message(f"/raid {target_user}", channel)
                 else:
                     print("[RAID] Could not resolve IDs. Falling back to chat command.")
