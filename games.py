@@ -65,8 +65,8 @@ class TriviaGame(Game):
         return False, None
 
 class GuessNumberGame(Game):
-    def __init__(self, channel, config):
-        super().__init__(channel, config)
+    def __init__(self, channel, config, send_message_callback=None):
+        super().__init__(channel, config, send_message_callback)
         self.target = random.randint(1, 100)
 
     def get_start_message(self):
@@ -89,8 +89,8 @@ class GuessNumberGame(Game):
             return False, None
 
 class WordScrambleGame(Game):
-    def __init__(self, channel, config):
-        super().__init__(channel, config)
+    def __init__(self, channel, config, send_message_callback=None):
+        super().__init__(channel, config, send_message_callback)
         self.word = ""
         self.scrambled = ""
         self.fetch_word()
