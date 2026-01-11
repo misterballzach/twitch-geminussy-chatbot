@@ -488,38 +488,14 @@ class IRCBot:
             self.send_message(f"Search failed. Please check your Google Search API key and Engine ID. Error: {search_results.replace('Search failed: ', '')}")
             return
 
-        prompt = f"Answer the following query from user '{user}' based on these search results. Be direct and helpful, bypassing any persona. Query: {query}\n\nSearch Results:\n{search_results}"
+        prompt = f"The user '{user}' asked: '{query}'.\n\nI have performed a Google search and found the following information:\n{search_results}\n\nUsing this information, answer the user's question. Act natural, like a human chatter watching the stream, and integrate the answer into the conversation. Include relevant links from the search results if helpful."
 
-        # We need a custom generate call or just use the existing one but override persona in prompt (which generate_ai_response adds anyway)
-        # To strictly bypass persona, we might need to modify generate_ai_response or make a new one.
-        # For now, let's try to instruct it to ignore previous instructions.
+        response_text = generate_ai_response(prompt, user, self.config)
 
-        # But wait, generate_ai_response prepends the persona.
-        # Let's just create a raw request here to ensure persona bypass.
+        # Save to memory so the conversation context is preserved
+        save_memory(user, query, response_text)
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.config['gemini_api_key']}"
-        headers = {"Content-Type": "application/json"}
-        data = {"contents":[{"parts":[{"text": prompt}]}]}
-
-        try:
-            r = requests.post(url, headers=headers, json=data, timeout=10)
-            r.raise_for_status()
-            resp = r.json()
-            text_parts = []
-            if "candidates" in resp:
-                for part in resp["candidates"][0]["content"]["parts"]:
-                    if "text" in part: text_parts.append(part["text"])
-            response_text = " ".join(text_parts).strip()
-
-            # Truncate if too long
-            if len(response_text) > 450:
-                 response_text = response_text[:447] + "..."
-
-            self.send_message(f"@{user} {response_text}")
-
-        except Exception as e:
-            print(f"[ERROR] Gemini command failed: {e}")
-            self.send_message("Sorry, I couldn't process that request.")
+        self.send_message(f"@{user} {response_text}")
 
     def say_command(self, args, user, channel):
         self.send_message(args)
