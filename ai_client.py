@@ -111,7 +111,7 @@ def generate_ai_response(prompt: str, user, config, context_monitor=None) -> str
     if context_monitor:
          spoken_context = f"\nRecent spoken context:\n{context_monitor.get_context()}\n"
 
-    personality_prompt = f"Respond in personality: {config['personality']}"
+    personality_prompt = f"Respond in personality: {config['personality']}. Keep your response concise (ideally under 450 characters) so it fits in Twitch chat, unless asked otherwise."
     if "personality_traits" in config:
         likes = ", ".join(config["personality_traits"].get("likes", []))
         if likes:
@@ -142,9 +142,8 @@ def generate_ai_response(prompt: str, user, config, context_monitor=None) -> str
             print("[ERROR] Gemini response empty, full JSON:", resp)
             return "Hmm… I couldn't come up with a response!"
 
-        max_length = config.get("max_response_length", 450)
-        if max_length is not None and len(text) > max_length:
-            text = text[:max_length] + "..."
+        # Removed hard truncation to prevent cutting off sentences.
+        # The bot's message sender handles chunking long messages.
 
         return text
     except Exception as e:
