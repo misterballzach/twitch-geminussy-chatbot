@@ -378,7 +378,8 @@ class IRCBot:
             "brb": self.brb_command,
             "back": self.back_command,
             "lurk": self.lurk_command,
-            "raidmsg": self.raidmsg_command
+            "raidmsg": self.raidmsg_command,
+            "raidout": self.raidout_command
         }
         self.context_monitor = ContextMonitor(self.config.get("caption_file_path"))
         self.game_manager = GameManager(self.config, self.send_message)
@@ -665,6 +666,54 @@ class IRCBot:
             response = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
             self.send_message(response, channel)
         threading.Thread(target=_raidmsg_task).start()
+
+    def raidout_command(self, args, user, channel):
+        target_user = args.strip()
+        if not target_user:
+            self.send_message(f"@{user}, usage: !raidout <target_channel>", channel)
+            return
+
+        def _raidout_task():
+            # 1. Generate hype message
+            prompt = f"We are raiding '{target_user}'. Write a short, spunky, hype raid message for my community to copy-paste. Include emojis. Keep it under 150 chars."
+            message = generate_ai_response(prompt, user, self.config, context_monitor=self.context_monitor)
+
+            # 2. Post to local chat
+            self.send_message(f"🚨 RAID INCOMING! Copy this: {message}", channel)
+
+            # 3. Trigger Twitch raid
+            self.send_message(f"/raid {target_user}", channel)
+
+            # 4. Invasion: Join target channel and post
+            try:
+                # We need a separate connection or just send JOIN on current socket?
+                # Ideally separate to avoid polluting main bot state, but single socket can handle multiple channels.
+                # Let's use the main socket but be careful.
+
+                # Check if we are already in the target channel (unlikely for random raids)
+                if target_user not in self.channels:
+                    with self.sock_lock:
+                        self.sock.send(f"JOIN #{target_user}\r\n".encode("utf-8"))
+                    time.sleep(2) # Wait for join
+
+                    # Send the hype message
+                    with self.sock_lock:
+                        self.sock.send(f"PRIVMSG #{target_user} :{message}\r\n".encode("utf-8"))
+                    print(f"[RAID] Invaded #{target_user} with: {message}")
+
+                    time.sleep(1)
+                    # Leave
+                    with self.sock_lock:
+                        self.sock.send(f"PART #{target_user}\r\n".encode("utf-8"))
+                else:
+                    # Already in channel, just send
+                    with self.sock_lock:
+                        self.sock.send(f"PRIVMSG #{target_user} :{message}\r\n".encode("utf-8"))
+
+            except Exception as e:
+                print(f"[ERROR] Raid invasion failed: {e}")
+
+        threading.Thread(target=_raidout_task).start()
 
     def send_brb_summary(self, channel, user, context_type="brb"):
         try:
