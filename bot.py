@@ -155,6 +155,15 @@ def analyze_sentiment_and_update_preferences(message, user, config):
 
     response_text = generate_ai_response(prompt, user, config)
 
+    # Clean up markdown if present
+    if response_text.startswith("```json"):
+        response_text = response_text[7:]
+    if response_text.startswith("```"):
+        response_text = response_text[3:]
+    if response_text.endswith("```"):
+        response_text = response_text[:-3]
+    response_text = response_text.strip()
+
     try:
         response_json = json.loads(response_text)
 
@@ -177,6 +186,7 @@ def analyze_sentiment_and_update_preferences(message, user, config):
 
     except Exception as e:
         print(f"[ERROR] Sentiment analysis failed: {e}")
+        print(f"[DEBUG] Failed text: {response_text}")
 
 # ---------------- MEMORY ----------------
 def save_memory(user, msg, response):
