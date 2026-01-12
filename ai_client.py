@@ -109,7 +109,8 @@ def generate_ai_response(prompt: str, user, config, context_monitor=None) -> str
     # Get spoken context from monitor
     spoken_context = ""
     if context_monitor:
-         spoken_context = f"\nRecent spoken context:\n{context_monitor.get_context()}\n"
+         streamer_name = config["channels"][0] if config.get("channels") else "the streamer"
+         spoken_context = f"\nRecent spoken context (spoken by {streamer_name}):\n{context_monitor.get_context()}\n"
 
     personality_prompt = f"Respond in personality: {config['personality']}. Keep your response concise (ideally under 450 characters) so it fits in Twitch chat, unless asked otherwise."
     if "personality_traits" in config:
